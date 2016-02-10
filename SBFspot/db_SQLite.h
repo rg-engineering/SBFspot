@@ -1,6 +1,6 @@
 /************************************************************************************************
 	SBFspot - Yet another tool to read power production of SMA® solar inverters
-	(c)2012-2014, SBF
+	(c)2012-2015, SBF
 
 	Latest version found at https://sbfspot.codeplex.com
 
@@ -50,6 +50,7 @@ extern int verbose;
 
 #define SQL_MINIMUM_SCHEMA_VERSION 1
 #define SQL_RECOMMENDED_SCHEMA_VERSION 1
+#define SQL_BUSY_RETRY_COUNT 20
 
 class db_SQL_Base
 {
@@ -86,9 +87,10 @@ protected:
 	std::string s_quoted(char *str) { return "'" + std::string(str) + "'"; }
 	bool isverbose(int level) { return !quiet && (verbose >= level); }
 	std::string status_text(int status);
-	void print_error(std::string msg) { std::cerr << "Error: " << msg << " : " << (m_dbHandle != NULL ? sqlite3_errmsg(m_dbHandle) : "null") << std::endl; }
-	void print_error(std::string msg, std::string sql) { std::cerr << "Error: " << msg << " : " << (m_dbHandle != NULL ? sqlite3_errmsg(m_dbHandle) : "null") << std::endl << "Executed Statement: " << sql; }
+	void print_error(std::string msg) { std::cerr << timestamp() << "Error: " << msg << ": '" << (m_dbHandle != NULL ? sqlite3_errmsg(m_dbHandle) : "null") << "'" << std::endl; }
+	void print_error(std::string msg, std::string sql) { std::cerr << timestamp() << "Error: " << msg << ": '" << (m_dbHandle != NULL ? sqlite3_errmsg(m_dbHandle) : "null") << "' while executing\n" << sql << std::endl; }
 	std::string strftime_t(time_t utctime) { return static_cast<std::ostringstream*>( &(std::ostringstream() << utctime) )->str(); }
+	std::string timestamp(void);
 };
 
 #endif //#if defined(USE_SQLITE)

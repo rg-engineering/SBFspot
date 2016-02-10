@@ -28,6 +28,9 @@
     <ClCompile Include="SBFspotUploadService.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\SBFspotUploadCommon\PVOutput_x.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ServiceBase.h">
@@ -70,8 +73,13 @@
     <Filter Include="Resource Files">
       <UniqueIdentifier>{73432d20-2500-4ca9-9774-43ba0a78969d}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Support Files">
+      <UniqueIdentifier>{e44a5c20-7664-4e63-a16f-2055101057e4}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <None Include="SBFspotUpload.cfg" />
+    <None Include="SBFspotUpload.cfg">
+      <Filter>Support Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

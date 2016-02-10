@@ -1,6 +1,6 @@
 /************************************************************************************************
 	SBFspot - Yet another tool to read power production of SMA® solar inverters
-	(c)2012-2014, SBF
+	(c)2012-2015, SBF
 
 	Latest version found at https://sbfspot.codeplex.com
 
@@ -39,7 +39,7 @@ DISCLAIMER:
 #include <errno.h>
 #include <stdio.h>
 
-#define COMMBUFSIZE 1024 // Size of Communications Buffer (Bluetooth/Ethernet)
+#define COMMBUFSIZE 2048 // Size of Communications Buffer (Bluetooth/Ethernet)
 
 #ifndef MAX_PATH
 #define MAX_PATH          260

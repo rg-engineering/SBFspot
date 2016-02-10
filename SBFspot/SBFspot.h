@@ -1,6 +1,6 @@
 /************************************************************************************************
 	SBFspot - Yet another tool to read power production of SMA® solar inverters
-	(c)2012-2014, SBF
+	(c)2012-2015, SBF
 
 	Latest version found at https://sbfspot.codeplex.com
 
@@ -49,18 +49,20 @@ DISCLAIMER:
 #include "boost/date_time/gregorian/gregorian.hpp"
 #include "boost/format.hpp"
 
+#include "Rec40S32.h"
+
 typedef struct
 {
     time_t datetime;
-    unsigned long long totalWh;
-    unsigned long long dayWh;
+    long long totalWh;	// changed to signed - issue 58
+    long long dayWh;	// changed to signed - issue 58
 } MonthData;
 
 typedef struct
 {
     time_t datetime;
-    unsigned long long totalWh;
-    unsigned long long watt;
+    long long totalWh;	// changed to signed - issue 58
+    long long watt;		// changed to signed - issue 58
 } DayData;
 
 typedef struct
@@ -93,18 +95,6 @@ enum getInverterDataType
 
 	sbftest             = 1 << 31
 };
-
-typedef enum
-{
-	VL_NONE=0,	// Volt Logging disabled
-	VL_AC_MAX,	// AC Max of all phases
-	VL_AC_PH1,	// AC Phase 1
-	VL_AC_PH2,	// AC Phase 2
-	VL_AC_PH3,	// AC Phase 3
-	VL_DC_MAX,	// DC Max of all strings
-	VL_DC_ST1,	// DC String 1
-	VL_DC_ST2	// DC String 2
-} VOLT_LOGGING;
 
 typedef enum
 {
@@ -182,6 +172,7 @@ typedef struct
 	int flags;
 	DayData dayData[288];
 	MonthData monthData[31];
+	time_t monthDataOffset;	// Issue 115
 	std::vector<EventData> eventData;
 	long calPdcTot;
 	long calPacTot;
@@ -208,7 +199,8 @@ typedef struct
 	std::string	ConfigFile;			//Fullpath to configuration file
 	std::string	AppPath;
     char	BT_Address[18];			//Inverter bluetooth address 12:34:56:78:9A:BC
-    char	IP_Address[16];			//Inverter IP address 192.168.178.123 (for Speedwirecommunication )
+    char	IP_Address[16];			//Inverter IP address 192.168.178.123 (for Speedwirecommunication)
+	std::vector<std::string> ip_addresslist; //List of Inverter IP addresses (for Speedwirecommunication )
     int		BT_Timeout;
 	int		BT_ConnectRetries;
 	short   IP_Port;
@@ -243,16 +235,9 @@ typedef struct
 	int		SunRSOffset;			// Offset to start before sunrise and end after sunset
 	int		userGroup;				// USER|INSTALLER
 	char	prgVersion[16];
-//	VOLT_LOGGING VoltLogging;
 	int		SpotTimeSource;			// 0=Use inverter time; 1=Use PC time in Spot CSV
 	int		SpotWebboxHeader;		// 0=Use standard Spot CSV hdr; 1=Webbox style hdr
-	char	locale[6];			// default en-US
-	//int		PVoutput;				// 0-1
-	//int		PVoutput_SID;
-	//char		PVoutput_Key[42];
-	//int		PVoutput_InvTemp;		// Upload Inverter Temperature to PVoutput
-	//int		PVoutput_InvTempMapTo;	// Upload Inverter Temperature to V5 or if in donation mode to v7..v12
-	//int		PVoutput_CumulNRG;		// Cumulative Flag (0=Today's Energy or 1=Total Energy)
+	char	locale[6];				// default en-US
 	int		MIS_Enabled;			// Multi Inverter Support
 	std::string	timezone;
 	boost::local_time::time_zone_ptr tz;
@@ -263,7 +248,6 @@ typedef struct
 	int		archDays;			// -ad			Number of days back to get Archived DayData (0=disabled, 1=today, ...)
 	int		archMonths;			// -am			Number of months back to get Archived MonthData (0=disabled, 1=this month, ...)
 	int		archEventMonths;	// -ae			Number of months back to get Archived Events (0=disabled, 1=this month, ...)
-	//int		upload;				// -u			Upload to online monitoring systems (PVOutput, ...)
 	int		forceInq;			// -finq		Inquire inverter also during the night
 	int		wsl;				// -wsl			WebSolarLog support (http://www.websolarlog.com/index.php/tag/sma-spot/)
 	int		quiet;				// -q			Silent operation (No output except for -wsl)
@@ -271,8 +255,8 @@ typedef struct
 	int		nospot;				// -sp0			Disables Spot CSV export
 	int		nosql;				// -nosql		Disables SQL export
 	int		loadlive;			// -loadlive	Force settings to prepare for live loading to http://pvoutput.org/loadlive.jsp
+	time_t	startdate;			// -startdate	Start reading of historic data at the given date (YYYYMMDD)
     S123_COMMAND	s123;		// -123s		123Solar Web Solar logger support(http://www.123solar.org/)
-
 } Config;
 
 
@@ -401,15 +385,15 @@ typedef enum
     InverterWLim                    = 0x00832A00,   // *00* Maximum active power device (aka INV_PACMAX1_2) (Some inverters like SB3300/SB1200)
 	GridMsPhVphsA2B6100             = 0x00464B00,
 	GridMsPhVphsB2C6100             = 0x00464C00,
-	GridMsPhVphsC2A6100             = 0x00464D00,
+	GridMsPhVphsC2A6100             = 0x00464D00
 } LriDef;
 
-#define NaN_S16			0x8000		// "Not a Number" representation for SHORT (converted to 0 by SBFspot)
-#define NaN_U16			0xFFFF		// "Not a Number" representation for USHORT (converted to 0 by SBFspot)
-#define NaN_S32			0x80000000L	// "Not a Number" representation for LONG (converted to 0 by SBFspot)
-#define NaN_U32			0xFFFFFFFFL	// "Not a Number" representation for ULONG (converted to 0 by SBFspot)
-#define NaN_S64			0x8000000000000000LL	// "Not a Number" representation for LONGLONG (converted to 0 by SBFspot)
-#define NaN_U64			0xFFFFFFFFFFFFFFFFLL	// "Not a Number" representation for ULONGLONG (converted to 0 by SBFspot)
+#define NaN_S16	0x8000		                    // "Not a Number" representation for SHORT (converted to 0 by SBFspot)
+#define NaN_U16	0xFFFF		                    // "Not a Number" representation for USHORT (converted to 0 by SBFspot)
+#define NaN_S32	(int32_t) 0x80000000	        // "Not a Number" representation for LONG (converted to 0 by SBFspot)
+#define NaN_U32	(uint32_t)0xFFFFFFFF	        // "Not a Number" representation for ULONG (converted to 0 by SBFspot)
+#define NaN_S64	(int64_t) 0x8000000000000000	// "Not a Number" representation for LONGLONG (converted to 0 by SBFspot)
+#define NaN_U64	(uint64_t)0xFFFFFFFFFFFFFFFF	// "Not a Number" representation for ULONGLONG (converted to 0 by SBFspot)
 
 #define NA				"N/A"
 
@@ -425,6 +409,7 @@ typedef enum
 	E_INVPASSW		= -7,	// Invalid password
 	E_RETRY			= -8,	// Retry the last action
 	E_EOF			= -9,	// End of data
+	E_PRIVILEGE		= -10	// Privilege not held (need installer login)
 } E_SBFSPOT;
 
 //User Group
@@ -442,6 +427,7 @@ typedef enum
 //Function prototypes
 E_SBFSPOT initialiseSMAConnection(InverterData *invData);
 E_SBFSPOT ethInitConnection(InverterData *inverters[], char *IP_Address);
+E_SBFSPOT ethInitConnectionMulti(InverterData *inverters[], std::vector<std::string> IPaddresslist);
 void CalcMissingSpot(InverterData *invData);
 int DaysInMonth(int month, int year);
 int getBT_SignalStrength(InverterData *invData);
@@ -453,6 +439,7 @@ const char *getEventType(unsigned short eventflags);
 int getInverterData(InverterData *inverters[], enum getInverterDataType type);
 int getInverterIndexByAddress(InverterData *inverters[], unsigned char bt_addr[6]);
 int getInverterIndexBySerial(InverterData *inverters[], unsigned short SUSyID, unsigned long Serial);
+int getInverterIndexBySerial(InverterData *inverters[], unsigned long Serial);
 E_SBFSPOT getPacket(unsigned char senderaddr[6], int wait4Command);
 //int get_tzOffset(void);
 void HexDump(unsigned char *buf, int count, int radix);
@@ -470,6 +457,11 @@ void SynchInverterTime(void);
 E_SBFSPOT ethGetPacket(void);
 void resetInverterData(InverterData *inv);
 void ShowConfig(Config *cfg);
+E_SBFSPOT getInverterWMax(InverterData *inv, Rec40S32 &data);
+E_SBFSPOT setInverterWMax(InverterData *inv, Rec40S32 &data);
+E_SBFSPOT getDeviceData(InverterData *inv, LriDef lri, uint16_t cmd, Rec40S32 &data);
+E_SBFSPOT setDeviceData(InverterData *inv, LriDef lri, uint16_t cmd, Rec40S32 &data);
+E_SBFSPOT setPowerLimit(InverterData *devList[], unsigned long serial, int powerlimit, bool isPct);
 
 extern unsigned char CommBuf[COMMBUFSIZE];
 

@@ -1,6 +1,6 @@
 /************************************************************************************************
 	SBFspot - Yet another tool to read power production of SMA® solar inverters
-	(c)2012-2014, SBF
+	(c)2012-2015, SBF
 
 	Latest version found at https://sbfspot.codeplex.com
 
@@ -36,7 +36,10 @@ DISCLAIMER:
 #include "osselect.h"
 
 #include <time.h>
+#include <boost/version.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 
+#if BOOST_VERSION < 105800
 time_t to_time_t(boost::posix_time::ptime t);
+#endif
 time_t to_time_t(boost::gregorian::date d);

@@ -1,6 +1,6 @@
 /************************************************************************************************
 	SBFspot - Yet another tool to read power production of SMA® solar inverters
-	(c)2012-2014, SBF
+	(c)2012-2015, SBF
 
 	Latest version found at https://sbfspot.codeplex.com
 
@@ -34,12 +34,17 @@ DISCLAIMER:
 
 #include "boost_ext.h"
 
+// to_time_t() function has been "restored" in BOOST 1.58.0
+// http://www.boost.org/users/history/version_1_58_0.html
+// Fix issue 110: SBFspot does not compile with BOOST 1.58
+#if BOOST_VERSION < 105800
 time_t to_time_t(boost::posix_time::ptime t)
 {
 	boost::posix_time::ptime epoch(boost::gregorian::date(1970,1,1));
 	boost::posix_time::time_duration::sec_type x = (t - epoch).total_seconds();
 	return time_t(x);
-} 
+}
+#endif
 
 time_t to_time_t(boost::gregorian::date d)
 {

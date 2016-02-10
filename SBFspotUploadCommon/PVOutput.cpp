@@ -126,75 +126,9 @@ PVOutput::~PVOutput()
 	curl_global_cleanup();
 }
 
-//Removed in version 3.0
-//bool PVOutput::Export(Config *cfg, InverterData *inverters[])
-//{
-//	if (isverbose(2)) cout << "PVOutput::Export()\n";
-//
-//	m_curlres = CURLE_FAILED_INIT;
-//
-//	char postData[512];
-//	const char *dt_format = "d=%Y%m%d&t=%H:%M";
-//	const char *addStatus = "http://pvoutput.org/service/r2/addstatus.jsp";
-//
-//	//Upload highest value of Grid Voltage (Fixes issue 23)
-//	long voltage = 0;
-//	switch(cfg->VoltLogging)
-//	{
-//	case VL_NONE:	voltage = 0; break;
-//	case VL_AC_MAX:	voltage = max(max(inverters[0]->Uac1, inverters[0]->Uac2), inverters[0]->Uac3); break;
-//	case VL_AC_PH1:	voltage = inverters[0]->Uac1; break;
-//	case VL_AC_PH2:	voltage = inverters[0]->Uac2; break;
-//	case VL_AC_PH3:	voltage = inverters[0]->Uac3; break;
-//	case VL_DC_MAX:	voltage = max(inverters[0]->Udc1, inverters[0]->Udc2); break;
-//	case VL_DC_ST1:	voltage = inverters[0]->Udc1; break;
-//	case VL_DC_ST2:	voltage = inverters[0]->Udc2; break;
-//	}
-//
-//	if (m_curl)
-//	{
-//		//Calculate totals for all inverters
-//	    long long sumEToday = 0;
-//		long long sumETotal = 0;
-//		long sumTotalPac = 0;
-//		for (int inv=0; inverters[inv]!=NULL && inv<MAX_INVERTERS; inv++)
-//		{
-//			sumEToday += inverters[inv]->EToday;
-//			sumETotal += inverters[inv]->ETotal;
-//			sumTotalPac += inverters[inv]->TotalPac;
-//		}
-//
-//		if ((cfg->PVoutput_InvTempMapTo > 6) && !isSupporter())
-//			cerr << "WARNING: attempting to use extended parameters (v7..v12) while not in donation mode.\n";
-//
-//		char vInvTemp[16]; snprintf(vInvTemp, sizeof(vInvTemp), "&v%d=%.1f", cfg->PVoutput_InvTempMapTo, (float)inverters[0]->Temperature/100);
-//		char v6[16]; snprintf(v6, sizeof(v6), "&v6=%.1f", (float)voltage/100);
-//
-//		snprintf(postData, sizeof(postData), "%s?%s&v1=%lld&v2=%ld%s%s&c1=%d&sid=%d&key=%s",
-//			addStatus, strftime_t(dt_format, inverters[0]->InverterDatetime),
-//			cfg->PVoutput_CumulNRG == 0 ? sumEToday : sumETotal,
-//			sumTotalPac,
-//			cfg->PVoutput_InvTemp == 0 ? "" : vInvTemp,
-//			voltage == 0 ? "" : v6,
-//			cfg->PVoutput_CumulNRG,
-//			cfg->PVoutput_SID, cfg->PVoutput_Key);
-//
-//	    curl_easy_setopt(m_curl, CURLOPT_URL, postData);
-//		clearBuffer();
-//		m_curlres = curl_easy_perform(m_curl);
-//		if (isverbose(2)) cout << m_buffer << endl;
-//	}
-//
-//	return (m_curlres == CURLE_OK);
-//}
-
-
 // Static Callback member function
-void PVOutput::writeCallback(char *ptr, size_t size, size_t nmemb, void *f)
-{
-   // Call non-static member function
-   static_cast<PVOutput *>(f)->writeCallback_impl(ptr, size, nmemb);
-}
+// Implemented in PVOutput_x.cpp to fix optimization problem (See Issues 55, 97 and 129)
+// void PVOutput::writeCallback(char *ptr, size_t size, size_t nmemb, void *f)
 
 // Callback implementation
 size_t PVOutput::writeCallback_impl(char *ptr, size_t size, size_t nmemb)

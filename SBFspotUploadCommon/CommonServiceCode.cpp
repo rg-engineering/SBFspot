@@ -1,6 +1,6 @@
 /************************************************************************************************
 	SBFspot - Yet another tool to read power production of SMA® solar inverters
-	(c)2012-2014, SBF
+	(c)2012-2015, SBF
 
 	Latest version found at https://sbfspot.codeplex.com
 
@@ -67,8 +67,9 @@ void CommonServiceCode(void)
 					{
                         batch_datelimit = PVO.batch_datelimit();
                         batch_statuslimit = PVO.batch_statuslimit();
-                        db.get_config(SQL_BATCH_DATELIMIT, batch_datelimit);
-                        db.get_config(SQL_BATCH_STATUSLIMIT, batch_statuslimit);
+						//Fix Issue 131
+                        //db.get_config(SQL_BATCH_DATELIMIT, batch_datelimit);
+                        //db.get_config(SQL_BATCH_STATUSLIMIT, batch_statuslimit);
 
                         nextStatusCheck = now + timeBetweenChecks;
                         db.set_config(SQL_BATCH_DATELIMIT, db.intToString(batch_datelimit));
@@ -127,9 +128,6 @@ void CommonServiceCode(void)
 						}
 						else
 							Log("addBatchStatus() returned " + PVO.errtext(), LOG_ERROR_);
-
-						for (int countdown = 5; !bStopping && countdown > 0; countdown--)
-							sleep(1);
 					}
 				}
 			}
@@ -143,8 +141,9 @@ void CommonServiceCode(void)
 			Log(msg.str(),LOG_ERROR_);
 		}
 
-		for (int countdown = 60; !bStopping && countdown > 0; countdown--)
-	        sleep(1);
+		// Wait for next run; 30 seconds after every 1 minute (08:00:30 - 08:01:30 - 08:02:30 - ...)
+		for (int countdown = 90 - (time(NULL) % 60); !bStopping && countdown > 0; countdown--)
+			sleep(1);
     }
 }
 

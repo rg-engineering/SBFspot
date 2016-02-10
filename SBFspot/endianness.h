@@ -1,6 +1,6 @@
 /************************************************************************************************
 	SBFspot - Yet another tool to read power production of SMA® solar inverters
-	(c)2012-2014, SBF
+	(c)2012-2015, SBF
 
 	Latest version found at https://sbfspot.codeplex.com
 
@@ -36,8 +36,8 @@ DISCLAIMER:
 
 /* Linux has its proper definitions*/
 #if defined(linux)
-	#include <endian.h>
-	#include <byteswap.h>
+	//Fix Issue 106 (Raspberry Pi only)
+	#include <bluetooth/bluetooth.h>
 #elif !defined(__BYTE_ORDER) && (defined(_M_IX86) || defined(_M_X64))
 /* Intel x86 */
 #define __BIG_ENDIAN 4321

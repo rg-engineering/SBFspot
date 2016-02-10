@@ -58,61 +58,71 @@ int db_SQL_Export::day_data(InverterData *inverters[])
 
 		for (int inv=0; inverters[inv]!=NULL && inv<MAX_INVERTERS; inv++)
 		{
+			const unsigned int numelements = sizeof(inverters[inv]->dayData)/sizeof(DayData);
 			unsigned int first_rec, last_rec;
-			for (first_rec = 0; (inverters[inv]->dayData[first_rec].watt <= 0) && (first_rec < sizeof(inverters[inv]->dayData)/sizeof(DayData)); first_rec++);
-			for (last_rec = (sizeof(inverters[inv]->dayData)/sizeof(DayData))-1; (inverters[inv]->dayData[last_rec].watt <= 0) && (last_rec >= 0); last_rec--);
-
-			for (unsigned int idx = first_rec-1; idx < last_rec+1; idx++)
+			// Find first record with production data
+			for (first_rec = 0; (inverters[inv]->dayData[first_rec].watt <= 0) && (first_rec < numelements); first_rec++);
+			if (first_rec < numelements) // Production data found or all zero?
 			{
-				// Invalid dates are not written to db
-				if (inverters[inv]->dayData[idx].datetime > 0)
+				// Include last zero record, just before production starts
+				if (first_rec > 0) first_rec--;
+
+				// Find last record with production data
+		        for (last_rec = numelements-1; (inverters[inv]->dayData[last_rec].watt <= 0) && (last_rec >= 0); last_rec--);
+
+				// Store data from first to last record
+		        for (unsigned int idx = first_rec; idx <= last_rec; idx++)
 				{
-					memset(values, 0, sizeof(values));
-
-					// Timestamp
-					values[0].buffer_type	= MYSQL_TYPE_LONG;
-					values[0].buffer		= (void *) &inverters[inv]->dayData[idx].datetime;
-					values[0].is_unsigned	= false;
-					values[0].is_null		= false;
-					values[0].length		= 0;
-
-					// Serial
-					values[1].buffer_type	= MYSQL_TYPE_LONG;
-					values[1].buffer		= (void *) &inverters[inv]->Serial;
-					values[1].is_unsigned	= true;
-					values[1].is_null		= false;
-					values[1].length		= 0;
-
-					// Total Yield
-					values[2].buffer_type	= MYSQL_TYPE_LONGLONG;
-					values[2].buffer		= (void *) &inverters[inv]->dayData[idx].totalWh;
-					values[2].is_unsigned	= true;
-					values[2].is_null		= false;
-					values[2].length		= 0;
-
-					// Power
-					values[3].buffer_type	= MYSQL_TYPE_LONGLONG;
-					values[3].buffer		= (void *) &inverters[inv]->dayData[idx].watt;
-					values[3].is_unsigned	= true;
-					values[3].is_null		= false;
-					values[3].length		= 0;
-
-					// PVOutput
-					values[4].buffer_type	= MYSQL_TYPE_NULL;
-
-					mysql_stmt_bind_param(pStmt, values);
-
-					rc = mysql_stmt_execute(pStmt);
-
-					if (rc != SQL_OK)
+					// Invalid dates are not written to db
+					if (inverters[inv]->dayData[idx].datetime > 0)
 					{
-						print_error("[day_data]mysql_stmt_execute() returned");
-						break;
+						memset(values, 0, sizeof(values));
+
+						// Timestamp
+						values[0].buffer_type	= MYSQL_TYPE_LONG;
+						values[0].buffer		= (void *) &inverters[inv]->dayData[idx].datetime;
+						values[0].is_unsigned	= false;
+						values[0].is_null		= false;
+						values[0].length		= 0;
+
+						// Serial
+						values[1].buffer_type	= MYSQL_TYPE_LONG;
+						values[1].buffer		= (void *) &inverters[inv]->Serial;
+						values[1].is_unsigned	= true;
+						values[1].is_null		= false;
+						values[1].length		= 0;
+
+						// Total Yield
+						values[2].buffer_type	= MYSQL_TYPE_LONGLONG;
+						values[2].buffer		= (void *) &inverters[inv]->dayData[idx].totalWh;
+						values[2].is_unsigned	= true;
+						values[2].is_null		= false;
+						values[2].length		= 0;
+
+						// Power
+						values[3].buffer_type	= MYSQL_TYPE_LONGLONG;
+						values[3].buffer		= (void *) &inverters[inv]->dayData[idx].watt;
+						values[3].is_unsigned	= true;
+						values[3].is_null		= false;
+						values[3].length		= 0;
+
+						// PVOutput
+						values[4].buffer_type	= MYSQL_TYPE_NULL;
+
+						mysql_stmt_bind_param(pStmt, values);
+
+						rc = mysql_stmt_execute(pStmt);
+
+						if (rc != SQL_OK)
+						{
+							print_error("[day_data]mysql_stmt_execute() returned");
+							break;
+						}
+
+						//mysql_stmt_reset(pStmt);
+
+						rc = SQL_OK;
 					}
-
-					//mysql_stmt_reset(pStmt);
-
-					rc = SQL_OK;
 				}
 			}
 		}

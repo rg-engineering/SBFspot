@@ -17,9 +17,6 @@
 #	sudo make install_release_mysql
 ######################################
 
-#Don't use -O2 compiler flag on g++ version 4.7.2 and above
-#Raspbian Wheezy (g++ 4.6.3) is not affected
-
 SBFSPOTDIR = /usr/local/bin/sbfspot.3
 
 CC = gcc
@@ -36,8 +33,8 @@ LIB =
 LDFLAGS = 
 
 INC_RELEASE_SQLITE = $(INC) -I../SBFspot
-#CFLAGS_RELEASE_SQLITE = $(CFLAGS) -O2 -DUSE_SQLITE
-CFLAGS_RELEASE_SQLITE = $(CFLAGS) -DUSE_SQLITE
+CFLAGS_RELEASE_SQLITE = $(CFLAGS) -O2 -DUSE_SQLITE
+CFLAGS_RELEASE_SQLITE_NOOPT = $(CFLAGS) -DUSE_SQLITE
 RESINC_RELEASE_SQLITE = $(RESINC)
 RCFLAGS_RELEASE_SQLITE = $(RCFLAGS)
 LIBDIR_RELEASE_SQLITE = $(LIBDIR)
@@ -48,8 +45,8 @@ DEP_RELEASE_SQLITE =
 OUT_RELEASE_SQLITE = bin/Release_SQLite/SBFspotUploadDaemon
 
 INC_RELEASE_MYSQL = $(INC) -I../SBFspot
-#CFLAGS_RELEASE_MYSQL = $(CFLAGS) -O2 -DUSE_MYSQL
-CFLAGS_RELEASE_MYSQL = $(CFLAGS) -DUSE_MYSQL
+CFLAGS_RELEASE_MYSQL = $(CFLAGS) -O2 -DUSE_MYSQL
+CFLAGS_RELEASE_MYSQL_NOOPT = $(CFLAGS) -DUSE_MYSQL
 RESINC_RELEASE_MYSQL = $(RESINC)
 RCFLAGS_RELEASE_MYSQL = $(RCFLAGS)
 LIBDIR_RELEASE_MYSQL = $(LIBDIR)
@@ -63,13 +60,15 @@ OBJ_RELEASE_SQLITE = $(OBJDIR_RELEASE_SQLITE)/SBFspot/db_SQLite.o \
 $(OBJDIR_RELEASE_SQLITE)/main.o \
 $(OBJDIR_RELEASE_SQLITE)/SBFspotUploadCommon/Configuration.o \
 $(OBJDIR_RELEASE_SQLITE)/SBFspotUploadCommon/PVOutput.o \
-$(OBJDIR_RELEASE_SQLITE)/SBFspotUploadCommon/CommonServiceCode.o
+$(OBJDIR_RELEASE_SQLITE)/SBFspotUploadCommon/CommonServiceCode.o \
+$(OBJDIR_RELEASE_SQLITE)/SBFspotUploadCommon/PVOutput_x.o
 
 OBJ_RELEASE_MYSQL = $(OBJDIR_RELEASE_MYSQL)/SBFspot/db_MySQL.o \
 $(OBJDIR_RELEASE_MYSQL)/main.o \
 $(OBJDIR_RELEASE_MYSQL)/SBFspotUploadCommon/Configuration.o \
 $(OBJDIR_RELEASE_MYSQL)/SBFspotUploadCommon/PVOutput.o \
-$(OBJDIR_RELEASE_MYSQL)/SBFspotUploadCommon/CommonServiceCode.o
+$(OBJDIR_RELEASE_MYSQL)/SBFspotUploadCommon/CommonServiceCode.o \
+$(OBJDIR_RELEASE_MYSQL)/SBFspotUploadCommon/PVOutput_x.o \
 
 clean: clean_release_sqlite clean_release_mysql
 
@@ -108,6 +107,9 @@ $(OBJDIR_RELEASE_SQLITE)/SBFspotUploadCommon/PVOutput.o: ../SBFspotUploadCommon/
 $(OBJDIR_RELEASE_SQLITE)/SBFspotUploadCommon/CommonServiceCode.o: ../SBFspotUploadCommon/CommonServiceCode.cpp
 	$(CXX) $(CFLAGS_RELEASE_SQLITE) $(INC_RELEASE_SQLITE) -c ../SBFspotUploadCommon/CommonServiceCode.cpp -o $(OBJDIR_RELEASE_SQLITE)/SBFspotUploadCommon/CommonServiceCode.o
 
+$(OBJDIR_RELEASE_SQLITE)/SBFspotUploadCommon/PVOutput_x.o: ../SBFspotUploadCommon/PVOutput_x.cpp
+	$(CXX) $(CFLAGS_RELEASE_SQLITE_NOOPT) $(INC_RELEASE_SQLITE) -c ../SBFspotUploadCommon/PVOutput_x.cpp -o $(OBJDIR_RELEASE_SQLITE)/SBFspotUploadCommon/PVOutput_x.o
+
 clean_release_sqlite: 
 	rm -f $(OBJ_RELEASE_SQLITE) $(OUT_RELEASE_SQLITE)
 	rm -rf bin/Release_SQLite
@@ -144,6 +146,9 @@ $(OBJDIR_RELEASE_MYSQL)/SBFspotUploadCommon/PVOutput.o: ../SBFspotUploadCommon/P
 
 $(OBJDIR_RELEASE_MYSQL)/SBFspotUploadCommon/CommonServiceCode.o: ../SBFspotUploadCommon/CommonServiceCode.cpp
 	$(CXX) $(CFLAGS_RELEASE_MYSQL) $(INC_RELEASE_MYSQL) -c ../SBFspotUploadCommon/CommonServiceCode.cpp -o $(OBJDIR_RELEASE_MYSQL)/SBFspotUploadCommon/CommonServiceCode.o
+
+$(OBJDIR_RELEASE_MYSQL)/SBFspotUploadCommon/PVOutput_x.o: ../SBFspotUploadCommon/PVOutput_x.cpp
+	$(CXX) $(CFLAGS_RELEASE_MYSQL_NOOPT) $(INC_RELEASE_MYSQL) -c ../SBFspotUploadCommon/PVOutput_x.cpp -o $(OBJDIR_RELEASE_MYSQL)/SBFspotUploadCommon/PVOutput_x.o
 
 clean_release_mysql: 
 	rm -f $(OBJ_RELEASE_MYSQL) $(OUT_RELEASE_MYSQL)

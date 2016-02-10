@@ -218,6 +218,8 @@ void HexDump(unsigned char *buf, int count, int radix)
         j++;
     }
     printf("\n");
+	fflush(stdout);
+	fflush(stderr);
 }
 
 /*

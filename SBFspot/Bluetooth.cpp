@@ -114,11 +114,17 @@ int bthClose()
 
 int bthSend(unsigned char *btbuffer)
 {
-	if (DEBUG_NORMAL)
-		HexDump(btbuffer, packetposition, 10);
-    size_t bytes_sent = send(sock, (const char *)btbuffer, packetposition, 0);
-	if (DEBUG_NORMAL)
-		printf("%d Bytes sent\n", bytes_sent);
+	if (DEBUG_NORMAL) HexDump(btbuffer, packetposition, 10);
+    int bytes_sent = send(sock, (const char *)btbuffer, packetposition, 0);
+	if (bytes_sent >= 0)
+	{
+		if (DEBUG_NORMAL) std::cout << bytes_sent << " Bytes sent" << std::endl;
+	}
+	else
+	{
+		std::cerr << "send() returned an error: " << errno << std::endl;
+	}
+
     return bytes_sent;
 }
 
@@ -318,9 +324,16 @@ int bthSend(unsigned char *btbuffer)
 {
 	if (DEBUG_NORMAL) HexDump(btbuffer, packetposition, 10);
 
-    size_t bytes_sent = write(sock, btbuffer, packetposition);
+    int bytes_sent = send(sock, btbuffer, packetposition, 0);
 
-	if (DEBUG_NORMAL) std::cout << bytes_sent << " Bytes sent" << std::endl;
+	if (bytes_sent >= 0)
+	{
+		if (DEBUG_NORMAL) std::cout << bytes_sent << " Bytes sent" << std::endl;
+	}
+	else
+	{
+		std::cerr << "send() returned an error: " << errno << std::endl;
+	}
 
     return bytes_sent;
 }
@@ -392,7 +405,7 @@ int bthRead(unsigned char *buf, unsigned int bufsize)
     else
     {
 		if (DEBUG_HIGHEST) puts("Timeout reading socket");
-        return -1;
+        return -1; // E_NODATA
     }
 
     if ( bytes_read > 0)
@@ -407,8 +420,10 @@ int bthRead(unsigned char *buf, unsigned int bufsize)
 			printf("Received %d bytes\n", bytes_read);
     }
     else
-
-        printf("recv() returned an error: %d\n", bytes_read);
+	{
+		std::cerr << "recv() returned an error: " << errno << std::endl;
+        return -1; // E_NODATA
+	}
 
     return bytes_read;
 }

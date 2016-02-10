@@ -28,7 +28,7 @@
 using namespace std;
 using namespace boost;
 
-const int MAX_INVERTERS = 10;
+//const int MAX_INVERTERS = 10;
 
 int verbose = 0;
 int quiet = 0;

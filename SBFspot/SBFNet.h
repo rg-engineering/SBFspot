@@ -38,7 +38,8 @@ DISCLAIMER:
 #include "osselect.h"
 #include "bluetooth.h"
 
-#define maxpcktBufsize 520
+//#define maxpcktBufsize 520
+#define maxpcktBufsize COMMBUFSIZE
 
 #define BTH_L2SIGNATURE 0x656003FF
 #define ETH_L2SIGNATURE 0x65601000

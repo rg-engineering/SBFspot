@@ -1,6 +1,6 @@
 /************************************************************************************************
 	SBFspot - Yet another tool to read power production of SMA® solar inverters
-	(c)2012-2014, SBF
+	(c)2012-2015, SBF
 
 	Latest version found at https://sbfspot.codeplex.com
 
@@ -121,10 +121,12 @@ int ExportMonthDataToCSV(const Config *cfg, InverterData *inverters[])
 	{
 		if (VERBOSE_NORMAL) puts("ExportMonthDataToCSV()");
 
-		if (inverters[0]->monthData[0].datetime <= 0)	//invalid date?
-			puts("There is no data to export!"); //First day of the month?
-		else
-		{
+        if (inverters[0]->monthData[0].datetime <= 0)   //invalid date?
+        {
+            if (!quiet) puts("There is no data to export!"); //First day of the month?
+        }
+        else
+        {
 			FILE *csv;
 
 			//Expand date specifiers in config::outputPath
@@ -218,6 +220,9 @@ int ExportDayDataToCSV(const Config *cfg, InverterData *inverters[])
 	{
 		date = inverters[0]->dayData[idx++].datetime;
 	} while ((idx < sizeof(inverters[0]->dayData)/sizeof(DayData)) && (date == 0));
+
+	// Fix Issue 90: SBFspot still creating 1970 .csv files
+	if (date == 0) return 0;	// Nothing to export! Silently exit.
 
 	//Expand date specifiers in config::outputPath
 	char exportPath[MAX_PATH];

@@ -1,6 +1,6 @@
 /************************************************************************************************
 	SBFspot - Yet another tool to read power production of SMA® solar inverters
-	(c)2012-2014, SBF
+	(c)2012-2015, SBF
 
 	Latest version found at https://sbfspot.codeplex.com
 
@@ -85,16 +85,24 @@ int db_SQL_Base::open(string server, string user, string pass, string database)
 {
 	int result = SQLITE_OK;
 
-    if (!m_dbHandle)	// Not yet open?
+	if (sqlite3_threadsafe() == 0)
+	{
+		print_error("SQLite3 libs are not threadsafe");
+		return SQLITE_ERROR;
+	}
+
+	if (!m_dbHandle)	// Not yet open?
 	{
 		m_database = database;
 
 		if (database.size() > 0)
-			result = sqlite3_open_v2(database.c_str(), &m_dbHandle, SQLITE_OPEN_READWRITE, NULL);
+			result = sqlite3_open_v2(database.c_str(), &m_dbHandle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, NULL);
 		else
 			result = SQLITE_ERROR;
 
-    	if(result != SQLITE_OK)
+    	if(result == SQLITE_OK)
+			sqlite3_busy_timeout(m_dbHandle, 2000);
+		else
 		{
 			print_error("Can't open SQLite db [" + m_database + "]");
 			m_dbHandle = NULL;
@@ -103,6 +111,7 @@ int db_SQL_Base::open(string server, string user, string pass, string database)
 
 	return result;
 }
+
 
 int db_SQL_Base::close(void)
 {
@@ -121,7 +130,27 @@ int db_SQL_Base::close(void)
 
 int db_SQL_Base::exec_query(string qry)
 {
-	return sqlite3_exec(m_dbHandle, qry.c_str(), NULL, NULL, NULL);
+	int result = SQLITE_OK;
+	int retrycount = 0;
+
+	do
+	{
+		result = sqlite3_exec(m_dbHandle, qry.c_str(), NULL, NULL, NULL);
+		if (result != SQLITE_OK)
+		{
+			print_error("sqlite3_exec() returned", qry);
+			if (++retrycount > SQL_BUSY_RETRY_COUNT)
+				break;
+		}
+
+	} while ((result == SQLITE_BUSY) || (result == SQLITE_LOCKED));
+
+	if ((result == SQLITE_OK) && (retrycount > 0))
+	{
+		std::cout << "Query executed successfully after " << retrycount << " time" << (retrycount == 1 ? "" : "s") << std::endl;
+	}
+
+	return result;
 }
 
 int db_SQL_Base::type_label(InverterData *inverters[])
@@ -353,6 +382,29 @@ int db_SQL_Base::get_config(const std::string key, int &value)
 		value = boost::lexical_cast<int>(strValue);
 
 	return rc;
+}
+
+std::string db_SQL_Base::timestamp(void)
+{
+    char buffer[100];
+#if !defined WIN32
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    struct tm *tm;
+    tm = localtime(&tv.tv_sec);
+
+    snprintf(buffer, sizeof(buffer), "[%04d-%02d-%02d %02d:%02d:%02d.%03d] ",
+             tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+             tm->tm_hour, tm->tm_min, tm->tm_sec, (int)tv.tv_usec / 1000);
+#else
+    SYSTEMTIME time;
+    ::GetLocalTime(&time);
+
+    sprintf_s(buffer, sizeof(buffer), "[%04d-%02d-%02d %02d:%02d:%02d.%03d] ", time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute, time.wSecond, time.wMilliseconds);
+#endif
+
+	std::string sTimestamp(buffer);
+	return sTimestamp;
 }
 
 #endif // #if defined(USE_SQLITE)

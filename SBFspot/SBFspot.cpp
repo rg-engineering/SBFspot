@@ -1,4 +1,9 @@
-#define VERSION "3.0.3"
+#define VERSION "3.1.2"
+
+// Removed -apl command line switch (Active Power Limit)
+// Fixed Issue 129: SBFspotUploadDeamon 3.1.1 gives error message
+// Fixed Issue 131: Donation status changes 'lost' in v3.1.1
+// Fixed Issue 133: 123Solar: There is no data to export!
 
 /************************************************************************************************
                                ____  ____  _____                _   
@@ -9,7 +14,7 @@
                                                    |_|              
 
 	SBFspot - Yet another tool to read power production of SMA® solar/battery inverters
-	(c)2012-2014, SBF
+	(c)2012-2015, SBF
 
 	Latest version can be found at https://sbfspot.codeplex.com
 
@@ -72,6 +77,8 @@ DISCLAIMER:
 #include "EventData.h"
 #include "ArchData.h"
 #include "SQLselect.h"
+#include <boost/algorithm/string.hpp>
+#include <boost/asio/ip/address.hpp>
 
 using namespace std;
 using namespace boost;
@@ -196,7 +203,13 @@ int main(int argc, char **argv)
 			return rc;
 		}
 
-		rc = ethInitConnection(Inverters, cfg.IP_Address);
+		if (cfg.ip_addresslist.size() > 1)
+			// New method for multiple inverters with fixed IP
+			rc = ethInitConnectionMulti(Inverters, cfg.ip_addresslist);
+		else
+			// Old method for one inverter (fixed IP or broadcast)
+			rc = ethInitConnection(Inverters, cfg.IP_Address);
+
 		if (rc != E_OK)
 		{
 			print_error(stdout, PROC_CRITICAL, "Failed to initialize Speedwire connection.");
@@ -220,16 +233,15 @@ int main(int argc, char **argv)
 
     if (VERBOSE_NORMAL) puts("Logon OK");
 
-    if (ConnType == CT_BLUETOOTH)
-    {
-        // Synchronize inverter time with system time
-        // only if enabled in config _or_ requested by 123Solar
-        if (cfg.synchTime == 1 || cfg.s123 == S123_SYNC ) SetInverterTime();
-    }
-    else
-        if (quiet == 0) puts("SetInverterTime() not executed! We're still testing..."); //2.4.5a
+	// Synchronize inverter time with system time
+    // only if enabled in config _or_ requested by 123Solar
+    if (cfg.synchTime == 1 || cfg.s123 == S123_SYNC )
+		SetInverterTime();
 
-    if ((rc = getInverterData(Inverters, SoftwareVersion)) != 0)
+	if ((rc = getInverterData(Inverters, sbftest)) != 0)
+        printf("getInverterData(sbftest) returned an error: %d\n", rc);
+
+	if ((rc = getInverterData(Inverters, SoftwareVersion)) != 0)
         printf("getSoftwareVersion returned an error: %d\n", rc);
 
     if ((rc = getInverterData(Inverters, TypeLabel)) != 0)
@@ -505,16 +517,14 @@ int main(int argc, char **argv)
 	}
 	#endif
 
-	//SolarInveretr -> Continue to get archive data
+	//SolarInverter -> Continue to get archive data
 	unsigned int idx;
-
-    //Get current time
-    time(&cfg.archdata_from);
 
     /***************
     * Get Day Data *
     ****************/
-    time_t arch_time = time(NULL);
+    time_t arch_time = (0 == cfg.startdate) ? time(NULL) : cfg.startdate;
+
     for (int count=0; count<cfg.archDays; count++)
     {
         if ((rc = ArchiveDayData(Inverters, arch_time)) != E_OK)
@@ -552,10 +562,11 @@ int main(int argc, char **argv)
     /*****************
     * Get Month Data *
     ******************/
-    time(&arch_time);
+	getMonthDataOffset(Inverters);
+
+    arch_time = (0 == cfg.startdate) ? time(NULL) : cfg.startdate;
     struct tm arch_tm;
     memcpy(&arch_tm, gmtime(&arch_time), sizeof(arch_tm));
-//	memcpy(&arch_tm, localtime(&arch_time), sizeof(arch_tm));
 
     for (int count=0; count<cfg.archMonths; count++)
     {
@@ -592,8 +603,8 @@ int main(int argc, char **argv)
     /*****************
     * Get Event Data *
     ******************/
-	
-	ptime tm_utc(posix_time::second_clock::universal_time());
+	posix_time::ptime tm_utc(posix_time::from_time_t((0 == cfg.startdate) ? time(NULL) : cfg.startdate));
+	//ptime tm_utc(posix_time::second_clock::universal_time());
 	gregorian::date dt_utc(tm_utc.date().year(), tm_utc.date().month(), 1);
 	std::string dt_range_csv = str(format("%d%02d") % dt_utc.year() % static_cast<short>(dt_utc.month()));
 
@@ -623,7 +634,7 @@ int main(int argc, char **argv)
 
 	if (rc == E_OK)
 	{
-		//Adjust start of range with 1 months
+		//Adjust start of range with 1 month
 		if (dt_utc.month() == 12)
 			dt_utc = gregorian::date(dt_utc.year() + 1, 1, 1);
 		else
@@ -643,7 +654,14 @@ int main(int argc, char **argv)
 	#endif
 	}
 
-    logoffSMAInverter(Inverters[0]);
+	if (cfg.ConnectionType == CT_BLUETOOTH)
+		logoffSMAInverter(Inverters[0]);
+	else
+	{
+		for (int inv=0; Inverters[inv]!=NULL && inv<MAX_INVERTERS; inv++)
+			logoffSMAInverter(Inverters[inv]);
+	}
+
     freemem(Inverters);
     bthClose();
 
@@ -679,7 +697,7 @@ E_SBFSPOT getPacket(unsigned char senderaddr[6], int wait4Command)
     do
     {
         int bib = bthRead(CommBuf, sizeof(pkHeader));
-        if (bib < 0)
+        if (bib <= 0)
         {
             if (DEBUG_NORMAL) printf("No data!\n");
             return E_NODATA;
@@ -814,6 +832,17 @@ int getInverterIndexBySerial(InverterData *inverters[], unsigned short SUSyID, u
     return -1;
 }
 
+int getInverterIndexBySerial(InverterData *inverters[], unsigned long Serial)
+{
+    for (int inv=0; inverters[inv]!=NULL && inv<MAX_INVERTERS; inv++)
+    {
+        if (inverters[inv]->Serial == Serial)
+            return inv;
+    }
+
+    return -1;
+}
+
 int getInverterIndexByAddress(InverterData *inverters[], unsigned char bt_addr[6])
 {
     for (int inv=0; inverters[inv]!=NULL && inv<MAX_INVERTERS; inv++)
@@ -896,11 +925,12 @@ E_SBFSPOT ethInitConnection(InverterData *inverters[], char *IP_Address)
     AppSUSyID = 125;
     srand(time(NULL));
     AppSerial = 900000000 + ((rand() << 16) + rand()) % 100000000;
-    if (VERBOSE_NORMAL) printf("SUSyID: %d - SN: %lu (0x%08lX)\n", AppSUSyID, AppSerial, AppSerial);
+	// Fix Issue 103: Eleminate confusion: apply name: session-id iso SN
+    if (VERBOSE_NORMAL) printf("SUSyID: %d - SessionID: %lu (0x%08lX)\n", AppSUSyID, AppSerial, AppSerial);
 
     E_SBFSPOT rc = E_OK;
 
-    if (strlen(IP_Address) < 8) // len less than 0.0.0.0 or len of no string ==> use broadcast to detect inverterg
+    if (strlen(IP_Address) < 8) // len less than 0.0.0.0 or len of no string ==> use broadcast to detect inverters
     {
 	    // Start with UDP broadcast to check for SMA devices on the LAN
     	writeLong(pcktBuf, 0x00414D53);  //Start of SMA header
@@ -939,7 +969,7 @@ E_SBFSPOT ethInitConnection(InverterData *inverters[], char *IP_Address)
             sprintf(inverters[devcount]->IPAddress, "%s", IP_Address);
             if (quiet == 0) printf("Inverter IP address: %s from SBFspot.cfg\n", inverters[devcount]->IPAddress);
         }
-        else                             // use IP from broadcast-detection of inverter
+		else	// use IP from broadcast-detection of inverter
         {
         	sprintf(inverters[devcount]->IPAddress, "%d.%d.%d.%d", CommBuf[38], CommBuf[39], CommBuf[40], CommBuf[41]);
             if (quiet == 0) printf("Inverter IP address: %s found via broadcastidentification\n", inverters[devcount]->IPAddress);
@@ -962,8 +992,8 @@ E_SBFSPOT ethInitConnection(InverterData *inverters[], char *IP_Address)
     if ((rc = ethGetPacket()) == E_OK)
     {
         ethPacket *pckt = (ethPacket *)pcktBuf;
-        inverters[0]->SUSyID = pckt->Source.SUSyID;
-        inverters[0]->Serial = pckt->Source.Serial;
+        inverters[0]->SUSyID = btohs(pckt->Source.SUSyID);	// Fix Issue 98
+        inverters[0]->Serial = btohl(pckt->Source.Serial);	// Fix Issue 98
     }
 	else
 	{
@@ -978,6 +1008,58 @@ E_SBFSPOT ethInitConnection(InverterData *inverters[], char *IP_Address)
     return rc;
 }
 
+// Initialise multiple ethernet connected inverters
+E_SBFSPOT ethInitConnectionMulti(InverterData *inverters[], std::vector<std::string> IPaddresslist)
+{
+    if (VERBOSE_NORMAL) puts("Initializing...");
+
+    //Generate a Serial Number for application
+    AppSUSyID = 125;
+    srand(time(NULL));
+    AppSerial = 900000000 + ((rand() << 16) + rand()) % 100000000;
+
+	if (VERBOSE_NORMAL) printf("SUSyID: %d - SessionID: %lu\n", AppSUSyID, AppSerial);
+
+    E_SBFSPOT rc = E_OK;
+
+    for (unsigned int devcount = 0; devcount < IPaddresslist.size(); devcount++)
+	{
+		inverters[devcount] = new InverterData;
+		resetInverterData(inverters[devcount]);
+		strcpy(inverters[devcount]->IPAddress, IPaddresslist[devcount].c_str());
+        if (quiet == 0) printf("Inverter IP address: %s from SBFspot.cfg\n", inverters[devcount]->IPAddress);
+
+		writePacketHeader(pcktBuf, 0, NULL);
+		writePacket(pcktBuf, 0x09, 0xA0, 0, anySUSyID, anySerial);
+		writeLong(pcktBuf, 0x00000200);
+		writeLong(pcktBuf, 0);
+		writeLong(pcktBuf, 0);
+		writeLong(pcktBuf, 0);
+		writePacketLength(pcktBuf);
+
+		ethSend(pcktBuf, inverters[devcount]->IPAddress);
+
+		if ((rc = ethGetPacket()) == E_OK)
+		{
+			ethPacket *pckt = (ethPacket *)pcktBuf;
+			inverters[devcount]->SUSyID = btohs(pckt->Source.SUSyID);
+			inverters[devcount]->Serial = btohl(pckt->Source.Serial);
+			if (VERBOSE_NORMAL) printf("Inverter replied: %s SUSyID: %d - Serial: %lu\n", inverters[devcount]->IPAddress, inverters[devcount]->SUSyID, inverters[devcount]->Serial);
+		}
+		else
+		{
+			std::cerr << "ERROR: Connection to inverter failed!" << std::endl;
+			std::cerr << "Is " << inverters[devcount]->IPAddress << " the correct IP?" << std::endl;
+			std::cerr << "Please check IP_Address in SBFspot.cfg!" << std::endl;
+			return E_INIT;
+		}
+
+		logoffSMAInverter(inverters[devcount]);
+	}
+
+    return rc;
+}
+
 E_SBFSPOT initialiseSMAConnection(const char *BTAddress, InverterData *inverters[], int MIS)
 {
     if (VERBOSE_NORMAL) puts("Initializing...");
@@ -986,7 +1068,8 @@ E_SBFSPOT initialiseSMAConnection(const char *BTAddress, InverterData *inverters
     AppSUSyID = 125;
     srand(time(NULL));
     AppSerial = 900000000 + ((rand() << 16) + rand()) % 100000000;
-    if (VERBOSE_NORMAL) printf("SUSyID: %d - SN: %lu (0x%08lX)\n", AppSUSyID, AppSerial, AppSerial);
+	// Fix Issue 103: Eleminate confusion: apply name: session-id iso SN
+    if (VERBOSE_NORMAL) printf("SUSyID: %d - SessionID: %lu (0x%08lX)\n", AppSUSyID, AppSerial, AppSerial);
 
     //Convert BT_Address '00:00:00:00:00:00' to BTAddress[6]
     //scanf reads %02X as int, but we need unsigned char
@@ -1100,7 +1183,7 @@ E_SBFSPOT initialiseSMAConnection(const char *BTAddress, InverterData *inverters
     }
 
     /***********************************************************************
-    	This part is only needed if you have more then one inverter
+    	This part is only needed if you have more than one inverter
     	The purpose is to (re)build the network when we have found only 1
     ************************************************************************/
     if(/*(MIS == 1) && */(devcount == 1) && (NetID > 1))
@@ -1337,26 +1420,26 @@ E_SBFSPOT logonSMAInverter(InverterData *inverters[], long userGroup, char *pass
 
     time_t now;
 
-    do
-    {
-        pcktID++;
-        now = time(NULL);
-        writePacketHeader(pcktBuf, 0x01, addr_unknown);
-        writePacket(pcktBuf, 0x0E, 0xA0, 0x0100, anySUSyID, anySerial);
-        writeLong(pcktBuf, 0xFFFD040C);
-        writeLong(pcktBuf, userGroup);	// User / Installer
-        writeLong(pcktBuf, 0x00000384); // Timeout = 900sec ?
-        writeLong(pcktBuf, now);
-        writeLong(pcktBuf, 0);
-        writeArray(pcktBuf, pw, sizeof(pw));
-        writePacketTrailer(pcktBuf);
-        writePacketLength(pcktBuf);
-    }
-    while (!isCrcValid(pcktBuf[packetposition-3], pcktBuf[packetposition-2]));
-
     if (ConnType == CT_BLUETOOTH)
     {
-        bthSend(pcktBuf);
+	    do
+		{
+			pcktID++;
+			now = time(NULL);
+			writePacketHeader(pcktBuf, 0x01, addr_unknown);
+			writePacket(pcktBuf, 0x0E, 0xA0, 0x0100, anySUSyID, anySerial);
+			writeLong(pcktBuf, 0xFFFD040C);
+			writeLong(pcktBuf, userGroup);	// User / Installer
+			writeLong(pcktBuf, 0x00000384); // Timeout = 900sec ?
+			writeLong(pcktBuf, now);
+			writeLong(pcktBuf, 0);
+			writeArray(pcktBuf, pw, sizeof(pw));
+			writePacketTrailer(pcktBuf);
+			writePacketLength(pcktBuf);
+		}
+		while (!isCrcValid(pcktBuf[packetposition-3], pcktBuf[packetposition-2]));
+
+		bthSend(pcktBuf);
 
         do	//while (validPcktID == 0);
         {
@@ -1394,27 +1477,46 @@ E_SBFSPOT logonSMAInverter(InverterData *inverters[], long userGroup, char *pass
     }
     else    // CT_ETHERNET
     {
-        //TODO: make this work for multiple inverters
-        ethSend(pcktBuf, inverters[0]->IPAddress);
+		for (int inv=0; inverters[inv]!=NULL && inv<MAX_INVERTERS; inv++)
+		{
+			do
+			{
+				pcktID++;
+				now = time(NULL);
+				writePacketHeader(pcktBuf, 0x01, addr_unknown);
+				writePacket(pcktBuf, 0x0E, 0xA0, 0x0100, anySUSyID, anySerial);
+				writeLong(pcktBuf, 0xFFFD040C);
+				writeLong(pcktBuf, userGroup);	// User / Installer
+				writeLong(pcktBuf, 0x00000384); // Timeout = 900sec ?
+				writeLong(pcktBuf, now);
+				writeLong(pcktBuf, 0);
+				writeArray(pcktBuf, pw, sizeof(pw));
+				writePacketTrailer(pcktBuf);
+				writePacketLength(pcktBuf);
+			}
+			while (!isCrcValid(pcktBuf[packetposition-3], pcktBuf[packetposition-2]));
 
-        validPcktID = 0;
-        do
-        {
-            if ((rc = ethGetPacket()) == E_OK)
-            {
-                ethPacket *pckt = (ethPacket *)pcktBuf;
-                if (pcktID == (btohs(pckt->PacketID) & 0x7FFF))   // Valid Packet ID
-                {
-                    validPcktID = 1;
-                    //rc = (pckt->ErrorCode == 0) ? E_OK : E_INVPASSW;
-					// Fix Issue CP5 - Logon problem Sunny Island
-					rc = (btohs(pckt->ErrorCode) == 0x0100) ? E_INVPASSW : E_OK;
+			ethSend(pcktBuf, inverters[inv]->IPAddress);
+
+			validPcktID = 0;
+			do
+			{
+				if ((rc = ethGetPacket()) == E_OK)
+				{
+					ethPacket *pckt = (ethPacket *)pcktBuf;
+					if (pcktID == (btohs(pckt->PacketID) & 0x7FFF))   // Valid Packet ID
+					{
+						validPcktID = 1;
+						//rc = (pckt->ErrorCode == 0) ? E_OK : E_INVPASSW;
+						// Fix Issue CP5 - Logon problem Sunny Island
+						rc = (btohs(pckt->ErrorCode) == 0x0100) ? E_INVPASSW : E_OK;
+					}
+					else
+						if (DEBUG_HIGHEST) printf("Packet ID mismatch. Expected %d, received %d\n", pcktID, (btohs(pckt->PacketID) & 0x7FFF));
 				}
-                else
-                    if (DEBUG_HIGHEST) printf("Packet ID mismatch. Expected %d, received %d\n", pcktID, (btohs(pckt->PacketID) & 0x7FFF));
-            }
-        } while (validPcktID == 0);
-    }
+			} while (validPcktID == 0);
+		}
+	}
 
     return rc;
 }
@@ -1437,7 +1539,6 @@ E_SBFSPOT logoffSMAInverter(InverterData *inverter)
     if(ConnType == CT_BLUETOOTH)
         bthSend(pcktBuf);
     else
-        //TODO: make this work for multiple inverters
         ethSend(pcktBuf, inverter->IPAddress);
 
     return E_OK;
@@ -1550,7 +1651,6 @@ int parseCmdline(int argc, char **argv, Config *cfg)
     cfg->archDays = 1;		// today only
     cfg->archMonths = 1;	// this month only
 	cfg->archEventMonths = 1;	// this month only
-//    cfg->upload = 0;		// upload to PVoutput and others (See config file)
     cfg->forceInq = 0;		// Inquire inverter also during the night
     cfg->userGroup = UG_USER;
     // WebSolarLog support (http://www.websolarlog.com/index.php/tag/sma-spot/)
@@ -1564,6 +1664,7 @@ int parseCmdline(int argc, char **argv, Config *cfg)
     // This is an undocumented feature and should only be used for 123solar
     cfg->s123 = S123_NOP;
 	cfg->loadlive = 0;	//force settings to prepare for live loading to http://pvoutput.org/loadlive.jsp
+	cfg->startdate = 0;
 
     //Set quiet mode
     for (int i = 1; i < argc; i++)
@@ -1692,10 +1793,6 @@ int parseCmdline(int argc, char **argv, Config *cfg)
 		else if ((stricmp(argv[i], "-liveload") == 0) || (stricmp(argv[i], "-loadlive") == 0))
 			cfg->loadlive = 1;
 
-		//Set upload flag
-        //else if (stricmp(argv[i], "-u") == 0)
-        //    cfg->upload = 1;
-
         //Set inquiryDark flag
         else if (stricmp(argv[i], "-finq") == 0)
             cfg->forceInq = 1;
@@ -1748,7 +1845,40 @@ int parseCmdline(int argc, char **argv, Config *cfg)
             else
                 strncpy(cfg->SMA_Password, argv[i]+10, sizeof(cfg->SMA_Password));
 
-        //look for alternative config file
+		else if (strnicmp(argv[i], "-startdate:", 11) == 0)
+		{
+            if (strlen(argv[i]) == 11)
+            {
+                InvalidArg(argv[i]);
+                return -1;
+            }
+            else
+			{
+				std::string dt_start(argv[i] + 11);
+				if (dt_start.length() == 8)	//YYYYMMDD
+				{
+					time_t start = time(NULL);
+					struct tm tm_start;
+					memcpy(&tm_start, localtime(&start), sizeof(tm_start));
+					tm_start.tm_year = atoi(dt_start.substr(0,4).c_str()) - 1900;
+					tm_start.tm_mon = atoi(dt_start.substr(4,2).c_str()) - 1;
+					tm_start.tm_mday = atoi(dt_start.substr(6,2).c_str());
+					cfg->startdate = mktime(&tm_start);
+					if (-1 == cfg->startdate)
+					{
+						InvalidArg(argv[i]);
+						return -1;
+					}
+				}
+				else
+				{
+					InvalidArg(argv[i]);
+					return -1;
+				}
+ 			}
+		}
+
+		//look for alternative config file
         else if (strnicmp(argv[i], "-cfg", 4) == 0)
         {
             if (strlen(argv[i]) == 4)
@@ -1804,7 +1934,7 @@ int parseCmdline(int argc, char **argv, Config *cfg)
 
 void InvalidArg(char *arg)
 {
-    printf("Invalid argument: %s\nUse -? for help\n", arg);
+    std::cout << "Invalid argument: " << arg << "\nUse -? for help" << std::endl;
 }
 
 void SayHello(int ShowHelp)
@@ -1814,32 +1944,33 @@ void SayHello(int ShowHelp)
 #else
 #define BYTEORDER "LE"
 #endif
-    cout << "SBFspot V" << VERSION << "\n";
-    cout << "Yet another tool to read power production of SMA solar inverters\n";
-    cout << "(c) 2012-2014, SBF (https://sbfspot.codeplex.com)\n";
-    cout << "Compiled for " << OS << " (" << BYTEORDER << ") " << sizeof(long) * 8 << " bit\n" << endl;
+    std::cout << "SBFspot V" << VERSION << "\n";
+    std::cout << "Yet another tool to read power production of SMA solar inverters\n";
+    std::cout << "(c) 2012-2015, SBF (https://sbfspot.codeplex.com)\n";
+    std::cout << "Compiled for " << OS << " (" << BYTEORDER << ") " << sizeof(long) * 8 << " bit\n" << std::endl;
     if (ShowHelp != 0)
     {
-		cout << "SBFspot [-options]" << endl;
-		cout << " -scan          Scan for bluetooth enabled SMA inverters.\n";
-        cout << " -d#            Set debug level: 0-5 (0=none, default=2)\n";
-        cout << " -v#            Set verbose output level: 0-5 (0=none, default=2)\n";
-        cout << " -ad#           Set #days for archived daydata: 0-" << MAX_CFG_AD << "\n";
-        cout << "                0=disabled, 1=today (default), ...\n";
-        cout << " -am#           Set #months for archived monthdata: 0-" << MAX_CFG_AM << "\n";
-        cout << "                0=disabled, 1=current month (default), ...\n";
-		cout << " -ae#           Set #months for archived events: 0-" << MAX_CFG_AE << "\n";
-		cout << "                0=disabled, 1=current month (default), ...\n";
-        cout << " -cfgX.Y        Set alternative config file to X.Y (multiple inverters)\n";
-        cout << " -u             Upload to online monitoring system (see config file)\n";
-        cout << " -finq          Force Inquiry (Inquire inverter also during the night)\n";
-        cout << " -q             Quiet (No output)\n";
-        cout << " -nocsv         Disables CSV export (Overrules CSV_Export in config)\n";
-        cout << " -nosql         Disables SQL export\n";
-        cout << " -sp0           Disables Spot.csv export\n";
-		cout << " -installer     Login as installer\n";
-		cout << " -password:xxxx Installer password\n";
-		cout << " -loadlive      Use predefined settings for manual upload to pvoutput.org\n" << endl;
+		std::cout << "SBFspot [-options]" << endl;
+		std::cout << " -scan               Scan for bluetooth enabled SMA inverters.\n";
+        std::cout << " -d#                 Set debug level: 0-5 (0=none, default=2)\n";
+        std::cout << " -v#                 Set verbose output level: 0-5 (0=none, default=2)\n";
+        std::cout << " -ad#                Set #days for archived daydata: 0-" << MAX_CFG_AD << "\n";
+        std::cout << "                     0=disabled, 1=today (default), ...\n";
+        std::cout << " -am#                Set #months for archived monthdata: 0-" << MAX_CFG_AM << "\n";
+        std::cout << "                     0=disabled, 1=current month (default), ...\n";
+		std::cout << " -ae#                Set #months for archived events: 0-" << MAX_CFG_AE << "\n";
+		std::cout << "                     0=disabled, 1=current month (default), ...\n";
+        std::cout << " -cfgX.Y             Set alternative config file to X.Y (multiple inverters)\n";
+        std::cout << " -u                  Upload to online monitoring system (see config file)\n";
+        std::cout << " -finq               Force Inquiry (Inquire inverter also during the night)\n";
+        std::cout << " -q                  Quiet (No output)\n";
+        std::cout << " -nocsv              Disables CSV export (Overrules CSV_Export in config)\n";
+        std::cout << " -nosql              Disables SQL export\n";
+        std::cout << " -sp0                Disables Spot.csv export\n";
+		std::cout << " -installer          Login as installer\n";
+		std::cout << " -password:xxxx      Installer password\n";
+		std::cout << " -loadlive           Use predefined settings for manual upload to pvoutput.org\n";
+		std::cout << " -startdate:YYYYMMDD Set start date for historic data retrieval\n" << std::endl;
     }
 }
 
@@ -1887,15 +2018,10 @@ int GetConfig(Config *cfg)
     cfg->CSV_Header = 1;
     cfg->CSV_SaveZeroPower = 1;
     cfg->SunRSOffset = 900;
-//    cfg->PVoutput = 0;
-//    cfg->VoltLogging = VL_AC_MAX;
     cfg->SpotTimeSource = 0;
     cfg->SpotWebboxHeader = 0;
     cfg->MIS_Enabled = 0;
 	strcpy(cfg->locale, "en-US");
-//	cfg->PVoutput_InvTemp=0;
-//	cfg->PVoutput_InvTempMapTo=5;
-//	cfg->PVoutput_CumulNRG = 0;
 
     const char *CFG_Boolean = "(0-1)";
     const char *CFG_InvalidValue = "Invalid value for '%s' %s\n";
@@ -1926,7 +2052,28 @@ int GetConfig(Config *cfg)
             if ((value != NULL) && (*rtrim(value) != 0))
             {
 				if(stricmp(variable, "BTaddress") == 0) strncpy(cfg->BT_Address, value, sizeof(cfg->BT_Address));
-                else if(strnicmp(variable, "IP_Address", 10) == 0) strncpy(cfg->IP_Address, value, sizeof(cfg->IP_Address));
+                else if(strnicmp(variable, "IP_Address", 10) == 0)
+				{
+					boost::split(cfg->ip_addresslist, value, boost::is_any_of(","));
+					for (unsigned int i = 0; i < cfg->ip_addresslist.size(); i++)
+					{
+						try
+						{
+						    boost::asio::ip::address ipv4Addr = boost::asio::ip::address::from_string(cfg->ip_addresslist[i]);
+							if (!ipv4Addr.is_v4())
+								throw -2;
+						}
+						catch (...)
+						{
+	                        std::cerr << "Invalid value for '" << variable << "' " << cfg->ip_addresslist[i] << std::endl;
+		                    rc = -2;
+							break;
+						}
+					}
+
+					if (rc == 0)
+						strncpy(cfg->IP_Address, cfg->ip_addresslist[0].c_str(), sizeof(cfg->IP_Address));
+				}
 				else if(stricmp(variable, "Password") == 0)
                 {
                     if(cfg->userGroup == UG_USER) strncpy(cfg->SMA_Password, value, sizeof(cfg->SMA_Password));
@@ -2438,31 +2585,55 @@ int getInverterData(InverterData *devList[], enum getInverterDataType type)
 		last = 0x002377FF;
 		break;
 
+	case sbftest:
+		command = 0x64020200;
+		first = 0x00618C00;
+		last = 0x00618FFF;
+		break;
+
     default:
         return E_BADARG;
     };
 
-    do
-    {
-        pcktID++;
-        writePacketHeader(pcktBuf, 0x01, addr_unknown);
-        writePacket(pcktBuf, 0x09, 0xA0, 0, anySUSyID, anySerial);
-        writeLong(pcktBuf, command);
-        writeLong(pcktBuf, first);
-        writeLong(pcktBuf, last);
-        writePacketTrailer(pcktBuf);
-        writePacketLength(pcktBuf);
-    }
-    while (!isCrcValid(pcktBuf[packetposition-3], pcktBuf[packetposition-2]));
-
     if (ConnType == CT_BLUETOOTH)
+	{
+		do
+		{
+			pcktID++;
+			writePacketHeader(pcktBuf, 0x01, addr_unknown);
+			writePacket(pcktBuf, 0x09, 0xA0, 0, anySUSyID, anySerial);
+			writeLong(pcktBuf, command);
+			writeLong(pcktBuf, first);
+			writeLong(pcktBuf, last);
+			writePacketTrailer(pcktBuf);
+			writePacketLength(pcktBuf);
+		}
+		while (!isCrcValid(pcktBuf[packetposition-3], pcktBuf[packetposition-2]));
+
         bthSend(pcktBuf);
-    else
-        ethSend(pcktBuf, devList[0]->IPAddress);
+	}
 
     for (int i=0; devList[i]!=NULL && i<MAX_INVERTERS; i++)
     {
-        validPcktID = 0;
+		if (ConnType == CT_ETHERNET)
+		{
+			do
+			{
+				pcktID++;
+				writePacketHeader(pcktBuf, 0x01, addr_unknown);
+				writePacket(pcktBuf, 0x09, 0xA0, 0, anySUSyID, anySerial);
+				writeLong(pcktBuf, command);
+				writeLong(pcktBuf, first);
+				writeLong(pcktBuf, last);
+				writePacketTrailer(pcktBuf);
+				writePacketLength(pcktBuf);
+			}
+			while (!isCrcValid(pcktBuf[packetposition-3], pcktBuf[packetposition-2]));
+
+	        ethSend(pcktBuf, devList[i]->IPAddress);
+		}
+
+		validPcktID = 0;
         do
         {
             if (ConnType == CT_BLUETOOTH)
@@ -2861,56 +3032,114 @@ int getInverterData(InverterData *devList[], enum getInverterDataType type)
 
 void resetInverterData(InverterData *inv)
 {
-	inv->BatAmp = 0;
-	inv->BatChaStt = 0;
-	inv->BatDiagCapacThrpCnt = 0;
-	inv->BatDiagTotAhIn = 0;
-	inv->BatDiagTotAhOut = 0;
-	inv->BatTmpVal = 0;
-	inv->BatVol = 0;
-	inv->BT_Signal = 0;
-	inv->calEfficiency = 0;
-	inv->calPacTot = 0;
-	inv->calPdcTot = 0;
+	memset(inv, 0, sizeof(InverterData));
 	inv->DevClass = AllDevices;
-	inv->DeviceClass[0] = 0;
-	inv->DeviceName[0] = 0;
-	inv->DeviceStatus = 0;
-	inv->DeviceType[0] = 0;
-	inv->EToday = 0;
-	inv->ETotal = 0;
-	inv->FeedInTime = 0;
-	inv->flags = 0;
-	inv->GridFreq = 0;
-	inv->GridRelayStatus = 0;
-	inv->Iac1 = 0;
-	inv->Iac2 = 0;
-	inv->Iac3 = 0;
-	inv->Idc1 = 0;
-	inv->Idc2 = 0;
-	inv->InverterDatetime = 0;
-	inv->IPAddress[0] = 0;
-	inv->modelID = 0;
-	inv->NetID = 0;
-	inv->OperationTime = 0;
-	inv->Pac1 = 0;
-	inv->Pac2 = 0;
-	inv->Pac3 = 0;
-	inv->Pdc1 = 0;
-	inv->Pdc2 = 0;
-	inv->Pmax1 = 0;
-	inv->Pmax2 = 0;
-	inv->Pmax3 = 0;
-	inv->Serial = 0;
-	inv->SleepTime = 0;
-	inv->SUSyID = 0;
-	inv->SWVersion[0] = 0;
-	inv->Temperature = 0;
-	inv->TotalPac = 0;
-	inv->Uac1 = 0;
-	inv->Uac2 = 0;
-	inv->Uac3 = 0;
-	inv->Udc1 = 0;
-	inv->Udc2 = 0;
-	inv->WakeupTime = 0;
 }
+
+E_SBFSPOT setDeviceData(InverterData *inv, LriDef lri, uint16_t cmd, Rec40S32 &data)
+{
+	E_SBFSPOT rc = E_OK;
+	
+	do
+	{
+        pcktID++;
+		time_t now = time(NULL);
+		writePacketHeader(pcktBuf, 0x01, inv->BTAddress);
+        writePacket(pcktBuf, 0x12, 0xE0, 0x0100, inv->SUSyID, inv->Serial);
+		writeShort(pcktBuf, 0x010E);
+		writeShort(pcktBuf, cmd);
+		writeLong(pcktBuf, 0x0A);
+		writeLong(pcktBuf, lri | 0x02000001);
+		writeLong(pcktBuf, now);
+		writeLong(pcktBuf, data.MinLL());
+		writeLong(pcktBuf, data.MaxLL());
+		writeLong(pcktBuf, data.MinUL());
+		writeLong(pcktBuf, data.MaxUL());
+		writeLong(pcktBuf, data.MinActual());
+		writeLong(pcktBuf, data.MaxActual());
+		writeLong(pcktBuf, data.Res1());
+		writeLong(pcktBuf, data.Res2());
+		writePacketTrailer(pcktBuf);
+		writePacketLength(pcktBuf);
+	} while (!isCrcValid(pcktBuf[packetposition-3], pcktBuf[packetposition-2]));
+
+    if (ConnType == CT_BLUETOOTH)
+        bthSend(pcktBuf);
+    else
+        ethSend(pcktBuf, inv->IPAddress);
+
+	return rc;
+}
+
+E_SBFSPOT getDeviceData(InverterData *inv, LriDef lri, uint16_t cmd, Rec40S32 &data)
+{
+	E_SBFSPOT rc = E_OK;
+	
+	const int recordsize = 40;
+
+	do
+	{
+		pcktID++;
+		writePacketHeader(pcktBuf, 0x01, inv->BTAddress);
+		writePacket(pcktBuf, 0x09, 0xA0, 0, inv->SUSyID, inv->Serial);
+		writeShort(pcktBuf, 0x0200);
+		writeShort(pcktBuf, cmd);
+		writeLong(pcktBuf, lri);
+		writeLong(pcktBuf, lri | 0xFF);
+		writePacketTrailer(pcktBuf);
+		writePacketLength(pcktBuf);
+	}
+	while (!isCrcValid(pcktBuf[packetposition-3], pcktBuf[packetposition-2]));
+
+    if (ConnType == CT_BLUETOOTH)
+        bthSend(pcktBuf);
+    else
+        ethSend(pcktBuf, inv->IPAddress);
+
+	int validPcktID = 0;
+    do
+    {
+        if (ConnType == CT_BLUETOOTH)
+            rc = getPacket(addr_unknown, 1);
+        else
+            rc = ethGetPacket();
+
+        if (rc != E_OK) return rc;
+
+        if ((ConnType == CT_BLUETOOTH) && (!validateChecksum()))
+            return E_CHKSUM;
+        else
+        {
+            unsigned short rcvpcktID = get_short(pcktBuf+27) & 0x7FFF;
+            if (pcktID == rcvpcktID)
+            {
+                uint32_t serial = get_long(pcktBuf + 17);
+				if (serial == inv->Serial)
+                {
+					rc = E_NODATA;
+                    validPcktID = 1;
+                    for (int i = 41; i < packetposition - 3; i += recordsize)
+                    {
+						data.LRI((uint32_t)get_long(pcktBuf + i));
+						data.DateTime((time_t)get_long(pcktBuf + i + 4));
+						data.MinLL(get_long(pcktBuf + i + 8));
+						data.MaxLL(get_long(pcktBuf + i + 12));
+						data.MinUL(get_long(pcktBuf + i + 16));
+						data.MaxUL(get_long(pcktBuf + i + 20));
+						data.MinActual(get_long(pcktBuf + i + 24));
+						data.MaxActual(get_long(pcktBuf + i + 28));
+						data.Res1(get_long(pcktBuf + i + 32));
+						data.Res2(get_long(pcktBuf + i + 36));
+						rc = E_OK;
+                    }
+                }
+				else if (DEBUG_HIGHEST) printf("Serial Nr mismatch. Expected %lu, received %d\n", inv->Serial, serial);
+            }
+            else if (DEBUG_HIGHEST) printf("Packet ID mismatch. Expected %d, received %d\n", pcktID, rcvpcktID);
+        }
+    }
+    while (validPcktID == 0);
+
+    return rc;
+}
+

@@ -1,6 +1,6 @@
 /************************************************************************************************
 	SBFspot - Yet another tool to read power production of SMA® solar inverters
-	(c)2012-2014, SBF
+	(c)2012-2015, SBF
 
 	Latest version found at https://sbfspot.codeplex.com
 
@@ -47,5 +47,6 @@ DISCLAIMER:
 E_SBFSPOT ArchiveDayData(InverterData *inverters[], time_t startTime);
 E_SBFSPOT ArchiveEventData(InverterData *inverters[], boost::gregorian::date startDate, unsigned long UserGroup);
 E_SBFSPOT ArchiveMonthData(InverterData *invData[], tm *start_tm);
+E_SBFSPOT getMonthDataOffset(InverterData *inverters[]);
 
 #endif

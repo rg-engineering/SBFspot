@@ -89,33 +89,33 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <LibraryPath>C:\Program Files %28x86%29\boost_1_55_0\lib32-msvc-10.0;$(LibraryPath)</LibraryPath>
-    <IncludePath>C:\Program Files %28x86%29\boost_1_55_0;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Program Files %28x86%29\boost\lib32-msvc-10.0;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Program Files %28x86%29\boost;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug_SQLite|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <LibraryPath>$(VCInstallDir)lib\sqlite;C:\Program Files %28x86%29\Microsoft Visual Studio 10.0\VC\lib\curl;C:\Program Files %28x86%29\boost_1_55_0\lib32-msvc-10.0;$(LibraryPath)</LibraryPath>
-    <IncludePath>C:\Program Files %28x86%29\Microsoft Visual Studio 10.0\VC\include\SQLite;C:\Program Files %28x86%29\boost_1_55_0;$(IncludePath)</IncludePath>
+    <LibraryPath>$(VCInstallDir)lib\sqlite;C:\Program Files %28x86%29\Microsoft Visual Studio 10.0\VC\lib\curl;C:\Program Files %28x86%29\boost\lib32-msvc-10.0;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Program Files %28x86%29\Microsoft Visual Studio 10.0\VC\include\SQLite;C:\Program Files %28x86%29\boost;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug_MySQL|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <LibraryPath>C:\Program Files %28x86%29\Microsoft Visual Studio 10.0\VC\lib\MySQL.x86;C:\Program Files %28x86%29\boost_1_55_0\lib32-msvc-10.0;$(LibraryPath)</LibraryPath>
-    <IncludePath>C:\Program Files %28x86%29\boost_1_55_0;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Program Files %28x86%29\Microsoft Visual Studio 10.0\VC\lib\MySQL.x86;C:\Program Files %28x86%29\boost\lib32-msvc-10.0;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Program Files %28x86%29\boost;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
-    <LibraryPath>C:\Program Files %28x86%29\Microsoft Visual Studio 10.0\VC\lib\curl;C:\Program Files %28x86%29\boost_1_55_0\lib32-msvc-10.0;$(LibraryPath)</LibraryPath>
-    <IncludePath>C:\Program Files %28x86%29\boost_1_55_0;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Program Files %28x86%29\Microsoft Visual Studio 10.0\VC\lib\curl;C:\Program Files %28x86%29\boost\lib32-msvc-10.0;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Program Files %28x86%29\boost;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release_SQLite|Win32'">
     <LinkIncremental>false</LinkIncremental>
-    <LibraryPath>$(VCInstallDir)lib\sqlite;C:\Program Files %28x86%29\Microsoft Visual Studio 10.0\VC\lib\curl;C:\Program Files %28x86%29\boost_1_55_0\lib32-msvc-10.0;$(LibraryPath)</LibraryPath>
-    <IncludePath>C:\Program Files %28x86%29\Microsoft Visual Studio 10.0\VC\include\SQLite;C:\Program Files %28x86%29\boost_1_55_0;$(IncludePath)</IncludePath>
+    <LibraryPath>$(VCInstallDir)lib\sqlite;C:\Program Files %28x86%29\Microsoft Visual Studio 10.0\VC\lib\curl;C:\Program Files %28x86%29\boost\lib32-msvc-10.0;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Program Files %28x86%29\Microsoft Visual Studio 10.0\VC\include\SQLite;C:\Program Files %28x86%29\boost;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release_MySQL|Win32'">
     <LinkIncremental>false</LinkIncremental>
-    <LibraryPath>C:\Program Files %28x86%29\Microsoft Visual Studio 10.0\VC\lib\MySQL.x86;C:\Program Files %28x86%29\boost_1_55_0\lib32-msvc-10.0;$(LibraryPath)</LibraryPath>
-    <IncludePath>C:\Program Files %28x86%29\boost_1_55_0;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Program Files %28x86%29\Microsoft Visual Studio 10.0\VC\lib\MySQL.x86;C:\Program Files %28x86%29\boost\lib32-msvc-10.0;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Program Files %28x86%29\boost;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -339,7 +339,7 @@ copy "$(ProjectDir)SBFspot.cfg" "$(OutDir)SBFspot.default.cfg"
     <ClInclude Include="oslinux.h" />
     <ClInclude Include="osselect.h" />
     <ClInclude Include="oswindows.h" />
-    <ClInclude Include="platform.h" />
+    <ClInclude Include="Rec40S32.h" />
     <ClInclude Include="SBFNet.h" />
     <ClInclude Include="SBFspot.h" />
     <ClInclude Include="SQLselect.h">

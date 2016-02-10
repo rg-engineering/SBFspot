@@ -1,6 +1,6 @@
 /************************************************************************************************
 	SBFspot - Yet another tool to read power production of SMA® solar inverters
-	(c)2012-2014, SBF
+	(c)2012-2015, SBF
 
 	Latest version found at https://sbfspot.codeplex.com
 
@@ -44,35 +44,45 @@ int db_SQL_Export::day_data(InverterData *inverters[])
 	sqlite3_stmt* pStmt;
 	if ((rc = sqlite3_prepare_v2(m_dbHandle, sql, strlen(sql), &pStmt, NULL)) == SQLITE_OK)
 	{
-		sqlite3_exec(m_dbHandle, "BEGIN TRANSACTION", NULL, NULL, NULL);
+		exec_query("BEGIN IMMEDIATE TRANSACTION");
 
 		for (int inv=0; inverters[inv]!=NULL && inv<MAX_INVERTERS; inv++)
 		{
+			const unsigned int numelements = sizeof(inverters[inv]->dayData)/sizeof(DayData);
 			unsigned int first_rec, last_rec;
-			for (first_rec = 0; (inverters[inv]->dayData[first_rec].watt <= 0) && (first_rec < sizeof(inverters[inv]->dayData)/sizeof(DayData)); first_rec++);
-			for (last_rec = (sizeof(inverters[inv]->dayData)/sizeof(DayData))-1; (inverters[inv]->dayData[last_rec].watt <= 0) && (last_rec >= 0); last_rec--);
-
-			for (unsigned int idx = first_rec-1; idx < last_rec+1; idx++)
+			// Find first record with production data
+			for (first_rec = 0; (inverters[inv]->dayData[first_rec].watt <= 0) && (first_rec < numelements); first_rec++);
+			if (first_rec < numelements) // Production data found or all zero?
 			{
-				// Invalid dates are not written to db
-				if (inverters[inv]->dayData[idx].datetime > 0)
+				// Include last zero record, just before production starts
+				if (first_rec > 0) first_rec--;
+
+				// Find last record with production data
+		        for (last_rec = numelements-1; (inverters[inv]->dayData[last_rec].watt <= 0) && (last_rec >= 0); last_rec--);
+
+				// Store data from first to last record
+		        for (unsigned int idx = first_rec; idx <= last_rec; idx++)
 				{
-					sqlite3_bind_int(pStmt, 1, inverters[inv]->dayData[idx].datetime);
-					sqlite3_bind_int(pStmt, 2, inverters[inv]->Serial);
-					sqlite3_bind_int64(pStmt, 3, inverters[inv]->dayData[idx].totalWh);
-					sqlite3_bind_int64(pStmt, 4, inverters[inv]->dayData[idx].watt);
-					sqlite3_bind_null(pStmt, 5);
-
-					rc = sqlite3_step(pStmt);
-					if ((rc != SQLITE_DONE) && (rc != SQLITE_CONSTRAINT))
+					// Invalid dates are not written to db
+					if (inverters[inv]->dayData[idx].datetime > 0)
 					{
-						print_error("[day_data]sqlite3_step() returned");
-						break;
-					}
+						sqlite3_bind_int(pStmt, 1, inverters[inv]->dayData[idx].datetime);
+						sqlite3_bind_int(pStmt, 2, inverters[inv]->Serial);
+						sqlite3_bind_int64(pStmt, 3, inverters[inv]->dayData[idx].totalWh);
+						sqlite3_bind_int64(pStmt, 4, inverters[inv]->dayData[idx].watt);
+						sqlite3_bind_null(pStmt, 5);
 
-					sqlite3_clear_bindings(pStmt);
-					sqlite3_reset(pStmt);
-					rc = SQLITE_OK;
+						rc = sqlite3_step(pStmt);
+						if ((rc != SQLITE_DONE) && (rc != SQLITE_CONSTRAINT))
+						{
+							print_error("[day_data]sqlite3_step() returned");
+							break;
+						}
+
+						sqlite3_clear_bindings(pStmt);
+						sqlite3_reset(pStmt);
+						rc = SQLITE_OK;
+					}
 				}
 			}
 		}
@@ -80,9 +90,12 @@ int db_SQL_Export::day_data(InverterData *inverters[])
 		sqlite3_finalize(pStmt);
 
 		if (rc == SQLITE_OK)
-			sqlite3_exec(m_dbHandle, "COMMIT", NULL, NULL, NULL);
+			exec_query("COMMIT");
 		else
-			sqlite3_exec(m_dbHandle, "ROLLBACK", NULL, NULL, NULL);
+		{
+			print_error("[day_data]Transaction failed. Rolling back now...");
+			exec_query("ROLLBACK");
+		}
 	}
 
 	return rc;
@@ -96,7 +109,7 @@ int db_SQL_Export::month_data(InverterData *inverters[])
 	sqlite3_stmt* pStmt;
 	if ((rc = sqlite3_prepare_v2(m_dbHandle, sql, strlen(sql), &pStmt, NULL)) == SQLITE_OK)
 	{
-		sqlite3_exec(m_dbHandle, "BEGIN TRANSACTION", NULL, NULL, NULL);
+		exec_query("BEGIN IMMEDIATE TRANSACTION");
 
 		for (int inv=0; inverters[inv]!=NULL && inv<MAX_INVERTERS; inv++)
 		{
@@ -109,7 +122,7 @@ int db_SQL_Export::month_data(InverterData *inverters[])
 			rmvsql.str("");
 			rmvsql << "DELETE FROM MonthData WHERE Serial=" << inverters[inv]->Serial << " AND strftime('%Y-%m',datetime(TimeStamp, 'unixepoch'))='" << dt << "';";
 
-			rc = sqlite3_exec(m_dbHandle, rmvsql.str().c_str(), NULL, NULL, NULL);
+			rc = exec_query(rmvsql.str().c_str());
 			if (rc != SQLITE_OK)
 			{
 				print_error("[month_data]sqlite3_exec() returned");
@@ -142,9 +155,12 @@ int db_SQL_Export::month_data(InverterData *inverters[])
 		sqlite3_finalize(pStmt);
 
 		if (rc == SQLITE_OK)
-			sqlite3_exec(m_dbHandle, "COMMIT", NULL, NULL, NULL);
+			exec_query("COMMIT");
 		else
-			sqlite3_exec(m_dbHandle, "ROLLBACK", NULL, NULL, NULL);
+		{
+			print_error("[month_data]Transaction failed. Rolling back now...");
+			exec_query("ROLLBACK");
+		}
 	}
 
 	return rc;
@@ -204,7 +220,7 @@ int db_SQL_Export::event_data(InverterData *inv[], TagDefs& tags)
 	sqlite3_stmt* pStmt;
 	if ((rc = sqlite3_prepare_v2(m_dbHandle, sql, strlen(sql), &pStmt, NULL)) == SQLITE_OK)
 	{
-		sqlite3_exec(m_dbHandle, "BEGIN TRANSACTION", NULL, NULL, NULL);
+		exec_query("BEGIN IMMEDIATE TRANSACTION");
 
 		for (int i=0; inv[i]!=NULL && i<MAX_INVERTERS; i++)
 		{
@@ -270,9 +286,12 @@ int db_SQL_Export::event_data(InverterData *inv[], TagDefs& tags)
 		sqlite3_finalize(pStmt);
 
 		if (rc == SQLITE_OK)
-			rc = sqlite3_exec(m_dbHandle, "COMMIT", NULL, NULL, NULL);
+			rc = exec_query("COMMIT");
 		else
-			rc = sqlite3_exec(m_dbHandle, "ROLLBACK", NULL, NULL, NULL);
+		{
+			print_error("[event_data]Transaction failed. Rolling back now...");
+			rc = exec_query("ROLLBACK");
+		}
 	}
 
 	return rc;

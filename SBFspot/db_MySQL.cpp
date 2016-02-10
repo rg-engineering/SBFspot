@@ -1,6 +1,6 @@
 /************************************************************************************************
 	SBFspot - Yet another tool to read power production of SMA® solar inverters
-	(c)2012-2014, SBF
+	(c)2012-2015, SBF
 
 	Latest version found at https://sbfspot.codeplex.com
 
@@ -335,6 +335,29 @@ int db_SQL_Base::get_config(const std::string key, int &value)
 		value = boost::lexical_cast<int>(strValue);
 
 	return rc;
+}
+
+std::string db_SQL_Base::timestamp(void)
+{
+    char buffer[100];
+#if !defined WIN32
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    struct tm *tm;
+    tm = localtime(&tv.tv_sec);
+
+    snprintf(buffer, sizeof(buffer), "[%04d-%02d-%02d %02d:%02d:%02d.%03d] ",
+             tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+             tm->tm_hour, tm->tm_min, tm->tm_sec, (int)tv.tv_usec / 1000);
+#else
+    SYSTEMTIME time;
+    ::GetLocalTime(&time);
+
+    sprintf_s(buffer, sizeof(buffer), "[%04d-%02d-%02d %02d:%02d:%02d.%03d] ", time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute, time.wSecond, time.wMilliseconds);
+#endif
+
+	std::string sTimestamp(buffer);
+	return sTimestamp;
 }
 
 #endif // #if defined(USE_MYSQL)

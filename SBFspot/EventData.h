@@ -1,6 +1,6 @@
 /************************************************************************************************
 	SBFspot - Yet another tool to read power production of SMA® solar inverters
-	(c)2012-2014, SBF
+	(c)2012-2015, SBF
 
 	Latest version found at https://sbfspot.codeplex.com
 
@@ -32,10 +32,10 @@ DISCLAIMER:
 
 ************************************************************************************************/
 
-#ifndef _EVENTDATA_H_
-#define _EVENTDATA_H_
+#pragma once
 
 #include "osselect.h"
+#include "endianness.h"
 
 #include <string>
 
@@ -83,20 +83,22 @@ private:
 
 public:
 	EventData(const uint32_t UserGroup, const SMA_EVENTDATA *ev):
-		m_DateTime(ev->DateTime),
-		m_EntryID(ev->EntryID),
-		m_SUSyID(ev->SUSyID),
-		m_SerNo(ev->SerNo),
-		m_EventCode(ev->EventCode),
-		m_EventFlags(ev->EventFlags),
-		m_Group(ev->Group),
-		m_Tag(ev->Tag),
-		m_Counter(ev->Counter),
-		m_DT_Change(ev->DT_Change),
-		m_Parameter(ev->Parameter),
-		m_NewVal(ev->NewVal),
-		m_OldVal(ev->OldVal),
-		m_UserGroup(UserGroup) {}
+		// Use btohs and btohl byte swapping macros for big endian systems (MIPS,...)
+		// Fix Issue 98
+        m_DateTime(btohl(ev->DateTime)),
+        m_EntryID(btohs(ev->EntryID)),
+        m_SUSyID(btohs(ev->SUSyID)),
+        m_SerNo(btohl(ev->SerNo)),
+        m_EventCode(btohs(ev->EventCode)),
+        m_EventFlags(btohs(ev->EventFlags)),
+        m_Group(btohl(ev->Group)),
+        m_Tag(btohl(ev->Tag)),
+        m_Counter(btohl(ev->Counter)),
+        m_DT_Change(btohl(ev->DT_Change)),
+        m_Parameter(btohl(ev->Parameter)),
+        m_NewVal(btohl(ev->NewVal)),
+        m_OldVal(btohl(ev->OldVal)),
+        m_UserGroup(UserGroup) {}
 	time_t   DateTime() const { return m_DateTime; }
 	uint16_t EntryID() const { return m_EntryID; }
 	uint16_t SUSyID() const { return m_SUSyID; }
@@ -129,5 +131,3 @@ private:
 
 bool SortEntryID_Asc(const EventData& ed1, const EventData& ed2);
 bool SortEntryID_Desc(const EventData& ed1, const EventData& ed2);
-
-#endif

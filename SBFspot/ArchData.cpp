@@ -1,6 +1,6 @@
 /************************************************************************************************
 	SBFspot - Yet another tool to read power production of SMA® solar inverters
-	(c)2012-2014, SBF
+	(c)2012-2015, SBF
 
 	Latest version found at https://sbfspot.codeplex.com
 
@@ -97,14 +97,17 @@ E_SBFSPOT ArchiveDayData(InverterData *inverters[], time_t startTime)
         if (ConnType == CT_BLUETOOTH)
             bthSend(pcktBuf);
         else
-            //TODO: Multiple inverters
-            ethSend(pcktBuf, inverters[0]->IPAddress);
+            ethSend(pcktBuf, inverters[inv]->IPAddress);
 
         do
         {
             unsigned long long totalWh = 0;
             unsigned long long totalWh_prev = 0;
-            time_t datetime;
+            time_t datetime = 0;
+            time_t datetime_prev = 0;
+            time_t datetime_next = 0;
+			bool dblrecord = false;		// Flag for double records (twins)
+
             const int recordsize = 12;
 
             do
@@ -129,26 +132,51 @@ E_SBFSPOT ArchiveDayData(InverterData *inverters[], time_t startTime)
                         validPcktID = 1;
                         for(int x = 41; x < (packetposition - 3); x += recordsize)
                         {
-                            datetime = (time_t)get_long(pcktBuf + x);
-                            totalWh = (unsigned long long)get_longlong(pcktBuf + x + 4);
-                            if (totalWh == NaN_U64) totalWh = 0;
-                            if (totalWh > 0) hasData = E_OK;
-                            if (totalWh_prev != 0)
-                            {
-                                struct tm timeinfo;
-                                memcpy(&timeinfo, localtime(&datetime), sizeof(timeinfo));
-                                if (start_tm.tm_mday == timeinfo.tm_mday)
-                                {
-                                    unsigned int idx = (timeinfo.tm_hour * 12) + (timeinfo.tm_min / 5);
-                                    if (idx < sizeof(inverters[inv]->dayData)/sizeof(DayData))
-                                    {
-                                        inverters[inv]->dayData[idx].datetime = datetime;
-                                        inverters[inv]->dayData[idx].totalWh = totalWh;
-                                        inverters[inv]->dayData[idx].watt = (totalWh - totalWh_prev) * 12;	// 60:5
-                                    }
-                                }
-                            }
-                            totalWh_prev = totalWh;
+                            datetime_next = (time_t)get_long(pcktBuf + x);
+							if (0 != (datetime_next - datetime)) // Fix Issue 108: sbfspot v307 crashes for daily export (-adnn)
+							{
+								totalWh_prev = totalWh;
+								datetime_prev = datetime;
+								datetime = datetime_next;
+								dblrecord = false;
+							}
+							else
+								dblrecord = true;
+
+							totalWh = (unsigned long long)get_longlong(pcktBuf + x + 4);
+                            if (totalWh != NaN_U64) // Fix Issue 109: Bad request 400: Power value too high for system size
+							{
+								if (totalWh > 0) hasData = E_OK;
+								if (totalWh_prev != 0)
+								{
+									struct tm timeinfo;
+									memcpy(&timeinfo, localtime(&datetime), sizeof(timeinfo));
+									if (start_tm.tm_mday == timeinfo.tm_mday)
+									{
+										unsigned int idx = (timeinfo.tm_hour * 12) + (timeinfo.tm_min / 5);
+										if (idx < sizeof(inverters[inv]->dayData)/sizeof(DayData))
+										{
+											if (VERBOSE_HIGHEST && dblrecord)
+											{
+												std::cout << "Overwriting existing record: " << strftime_t("%d/%m/%Y %H:%M:%S", datetime);
+												std::cout << " - " << std::fixed << std::setprecision(3) << (double)inverters[inv]->dayData[idx].totalWh/1000 << "kWh";
+												std::cout << " - " << std::fixed << std::setprecision(0) << inverters[inv]->dayData[idx].watt << "W" << std::endl;
+											}
+											if (VERBOSE_HIGHEST && ((datetime - datetime_prev) > 300))
+											{
+												std::cout << "Missing records in datastream " << strftime_t("%d/%m/%Y %H:%M:%S", datetime_prev);
+												std::cout << " -> " << strftime_t("%H:%M:%S", datetime) << std::endl;
+											}
+											inverters[inv]->dayData[idx].datetime = datetime;
+											inverters[inv]->dayData[idx].totalWh = totalWh;
+											//inverters[inv]->dayData[idx].watt = (totalWh - totalWh_prev) * 12;	// 60:5
+											// Fix Issue 105 - Don't assume each interval is 5 mins
+											// This is also a bug in SMA's Sunny Explorer V1.07.17 and before
+											inverters[inv]->dayData[idx].watt = (totalWh - totalWh_prev) * 3600 / (datetime - datetime_prev);
+										}
+									}
+								}
+							}
                         } //for
                     }
                     else
@@ -217,7 +245,7 @@ E_SBFSPOT ArchiveMonthData(InverterData *inverters[], tm *start_tm)
         if (ConnType == CT_BLUETOOTH)
             bthSend(pcktBuf);
         else
-            ethSend(pcktBuf, inverters[0]->IPAddress);
+            ethSend(pcktBuf, inverters[inv]->IPAddress);
 
         do
         {
@@ -251,6 +279,7 @@ E_SBFSPOT ArchiveMonthData(InverterData *inverters[], tm *start_tm)
                         {
                             datetime = (time_t)get_long(pcktBuf + x);
 							//datetime -= (datetime % 86400) + 43200; // 3.0 - Round to UTC 12:00 - Removed 3.0.1 see issue C54
+							datetime += inverters[inv]->monthDataOffset; // Issue 115
                             totalWh = get_longlong(pcktBuf + x + 4);
                             if (totalWh != MAXULONGLONG)
                             {
@@ -262,7 +291,7 @@ E_SBFSPOT ArchiveMonthData(InverterData *inverters[], tm *start_tm)
                                     {
                                         if (idx < sizeof(inverters[inv]->monthData)/sizeof(MonthData))
                                         {
-                                            inverters[inv]->monthData[idx].datetime = datetime;
+											inverters[inv]->monthData[idx].datetime = datetime;
                                             inverters[inv]->monthData[idx].totalWh = totalWh;
                                             inverters[inv]->monthData[idx].dayWh = totalWh - totalWh_prev;
                                             idx++;
@@ -316,7 +345,7 @@ E_SBFSPOT ArchiveEventData(InverterData *inverters[], boost::gregorian::date sta
         if (ConnType == CT_BLUETOOTH)
             bthSend(pcktBuf);
         else
-            ethSend(pcktBuf, inverters[0]->IPAddress);
+            ethSend(pcktBuf, inverters[inv]->IPAddress);
 
 		bool FIRST_EVENT_FOUND = false;
         do
@@ -343,11 +372,14 @@ E_SBFSPOT ArchiveEventData(InverterData *inverters[], boost::gregorian::date sta
                         for (int x = 41; x < (packetposition - 3); x += sizeof(SMA_EVENTDATA))
                         {
 							SMA_EVENTDATA *pEventData = (SMA_EVENTDATA *)(pcktBuf + x);
-							inverters[inv]->eventData.push_back(EventData(UserGroup, pEventData));
-							if (pEventData->EntryID == 1)
+							if (pEventData->DateTime > 0)	// Fix Issue 89
 							{
-								FIRST_EVENT_FOUND = true;
-								rc = E_EOF;
+								inverters[inv]->eventData.push_back(EventData(UserGroup, pEventData));
+								if (pEventData->EntryID == 1)
+								{
+									FIRST_EVENT_FOUND = true;
+									rc = E_EOF;
+								}
 							}
 						}
 
@@ -366,4 +398,40 @@ E_SBFSPOT ArchiveEventData(InverterData *inverters[], boost::gregorian::date sta
     }
 
     return rc;
+}
+
+//Issue 115
+E_SBFSPOT getMonthDataOffset(InverterData *inverters[])
+{
+    time_t now = time(NULL);
+    struct tm now_tm;
+    memcpy(&now_tm, gmtime(&now), sizeof(now_tm));
+
+	E_SBFSPOT rc = E_OK;
+
+	rc = ArchiveMonthData(inverters, &now_tm);
+
+	if (rc == E_OK)
+	{
+	    for (int inv=0; inverters[inv]!=NULL && inv<MAX_INVERTERS; inv++)
+		{
+			inverters[inv]->monthDataOffset = 0;
+			// Get last record of monthdata
+		    for(unsigned int i = sizeof(inverters[inv]->monthData)/sizeof(MonthData); i > 0; i--)
+			{
+				if (inverters[inv]->monthData[i].datetime != 0)
+				{
+					if ((inverters[inv]->monthData[i].datetime - now) < 86400)
+						inverters[inv]->monthDataOffset = -86400;
+
+					break;
+				}
+			}
+
+			if ((DEBUG_HIGHEST) && (!quiet))
+				std::cout << "monthDataOffset=" << inverters[inv]->monthDataOffset << std::endl;
+		}
+	}
+
+	return rc;
 }

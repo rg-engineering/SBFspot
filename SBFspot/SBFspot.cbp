@@ -19,6 +19,7 @@
 				</Compiler>
 				<Linker>
 					<Add library="boost_date_time" />
+					<Add library="boost_system" />
 				</Linker>
 			</Target>
 			<Target title="Release">
@@ -32,6 +33,7 @@
 				<Linker>
 					<Add option="-s" />
 					<Add library="boost_date_time" />
+					<Add library="boost_system" />
 				</Linker>
 			</Target>
 			<Target title="Debug_SQLite">
@@ -48,6 +50,7 @@
 				<Linker>
 					<Add library="boost_date_time" />
 					<Add library="sqlite3" />
+					<Add library="boost_system" />
 				</Linker>
 			</Target>
 			<Target title="Release_SQLite">
@@ -63,6 +66,7 @@
 					<Add option="-s" />
 					<Add library="boost_date_time" />
 					<Add library="sqlite3" />
+					<Add library="boost_system" />
 				</Linker>
 			</Target>
 			<Target title="Debug_MySQL">
@@ -79,6 +83,7 @@
 				<Linker>
 					<Add library="boost_date_time" />
 					<Add library="mysqlclient" />
+					<Add library="boost_system" />
 				</Linker>
 			</Target>
 			<Target title="Release_MySQL">
@@ -94,6 +99,7 @@
 					<Add option="-s" />
 					<Add library="boost_date_time" />
 					<Add library="mysqlclient" />
+					<Add library="boost_system" />
 				</Linker>
 			</Target>
 		</Build>
@@ -113,6 +119,7 @@
 		<Unit filename="Ethernet.h" />
 		<Unit filename="EventData.cpp" />
 		<Unit filename="EventData.h" />
+		<Unit filename="Rec40S32.h" />
 		<Unit filename="SBFNet.cpp" />
 		<Unit filename="SBFNet.h" />
 		<Unit filename="SBFspot.cfg" />

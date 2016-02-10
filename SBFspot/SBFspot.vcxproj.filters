@@ -111,7 +111,7 @@
     <ClInclude Include="SBFspot.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="platform.h">
+    <ClInclude Include="Rec40S32.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
