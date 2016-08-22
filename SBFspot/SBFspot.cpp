@@ -1,9 +1,12 @@
-#define VERSION "3.1.2"
+#define VERSION "3.3.1"
 
-// Removed -apl command line switch (Active Power Limit)
-// Fixed Issue 129: SBFspotUploadDeamon 3.1.1 gives error message
-// Fixed Issue 131: Donation status changes 'lost' in v3.1.1
-// Fixed Issue 133: 123Solar: There is no data to export!
+// Config option 'SynchTime' can now be a value of 0-30 to control plant time adjustment
+// SynchTime=0  -> Time adjustment disabled
+// SynchTime=1  -> Time is adjusted once a day if needed
+// SynchTime=7  -> Time is adjusted once a week if needed
+// SynchTime=30 -> Time is adjusted once a month if needed
+
+// Fixed Issue 150 SBFspotUploadDeamon not uploading (Ubuntu 16.04)
 
 /************************************************************************************************
                                ____  ____  _____                _   
@@ -14,7 +17,7 @@
                                                    |_|              
 
 	SBFspot - Yet another tool to read power production of SMA® solar/battery inverters
-	(c)2012-2015, SBF
+	(c)2012-2016, SBF
 
 	Latest version can be found at https://sbfspot.codeplex.com
 
@@ -122,6 +125,13 @@ int main(int argc, char **argv)
     verbose = cfg.verbose;
     quiet = cfg.quiet;
     ConnType = cfg.ConnectionType;
+
+	if ((ConnType != CT_BLUETOOTH) && (cfg.settime == 1))
+	{
+		std::cout << "-settime is only supported for Bluetooth devices" << std::endl;
+		return 0;
+	}
+
     strncpy(DateTimeFormat, cfg.DateTimeFormat, sizeof(DateTimeFormat));
     strncpy(DateFormat, cfg.DateFormat, sizeof(DateFormat));
 
@@ -190,7 +200,7 @@ int main(int argc, char **argv)
         }
 
         rc = getBT_SignalStrength(Inverters[0]);
-        if (VERBOSE_NORMAL) printf("BT Signal=%0.f%%\n", Inverters[0]->BT_Signal);
+        if (VERBOSE_NORMAL) printf("BT Signal=%0.1f%%\n", Inverters[0]->BT_Signal);
 
     }
     else // CT_ETHERNET
@@ -233,10 +243,24 @@ int main(int argc, char **argv)
 
     if (VERBOSE_NORMAL) puts("Logon OK");
 
-	// Synchronize inverter time with system time
-    // only if enabled in config _or_ requested by 123Solar
-    if (cfg.synchTime == 1 || cfg.s123 == S123_SYNC )
-		SetInverterTime();
+	// If SBFspot is executed with -settime argument
+	if (cfg.settime == 1)
+	{
+		rc = SetPlantTime(0, 0, 0);	// Set time ignoring limits
+		logoffSMAInverter(Inverters[0]);
+
+	    freemem(Inverters);
+		bthClose();	// Close socket
+
+		return rc;
+	}
+
+	// Synchronize plant time with system time
+    // Only BT connected devices and if enabled in config _or_ requested by 123Solar
+	// Most probably Speedwire devices get their time from the local IP network
+    if ((ConnType == CT_BLUETOOTH) && (cfg.synchTime > 0 || cfg.s123 == S123_SYNC ))
+		if ((rc = SetPlantTime(cfg.synchTime, cfg.synchTimeLow, cfg.synchTimeHigh)) != E_OK)
+	        printf("SetPlantTime returned an error: %d\n", rc);
 
 	if ((rc = getInverterData(Inverters, sbftest)) != 0)
         printf("getInverterData(sbftest) returned an error: %d\n", rc);
@@ -321,7 +345,7 @@ int main(int argc, char **argv)
             if (VERBOSE_NORMAL)
             {
                 printf("SUSyID: %d - SN: %lu\n", Inverters[inv]->SUSyID, Inverters[inv]->Serial);
-				printf("Device Temperature: %3.1f%sC\n", (float)(Inverters[inv]->Temperature / 100), SYM_DEGREE); // degree symbol is different on windows/linux
+				printf("Device Temperature: %3.1f%sC\n", ((float)Inverters[inv]->Temperature / 100), SYM_DEGREE); // degree symbol is different on windows/linux
             }
         }
     }
@@ -540,7 +564,10 @@ int main(int argc, char **argv)
                     printf("SUSyID: %d - SN: %lu\n", Inverters[inv]->SUSyID, Inverters[inv]->Serial);
                     for (idx=0; idx<sizeof(Inverters[inv]->dayData)/sizeof(DayData); idx++)
                         if (Inverters[inv]->dayData[idx].datetime > 0)
+						{
                             printf("%s : %.3fkWh - %3.3fW\n", strftime_t(cfg.DateTimeFormat, Inverters[inv]->dayData[idx].datetime), (double)Inverters[inv]->dayData[idx].totalWh/1000, (double)Inverters[inv]->dayData[idx].watt);
+						    fflush(stdout);
+						}
                     puts("======");
                 }
             }
@@ -562,43 +589,45 @@ int main(int argc, char **argv)
     /*****************
     * Get Month Data *
     ******************/
-	getMonthDataOffset(Inverters);
+	if (cfg.archMonths > 0)
+	{
+		getMonthDataOffset(Inverters); //Issues 115/130
+		arch_time = (0 == cfg.startdate) ? time(NULL) : cfg.startdate;
+		struct tm arch_tm;
+		memcpy(&arch_tm, gmtime(&arch_time), sizeof(arch_tm));
 
-    arch_time = (0 == cfg.startdate) ? time(NULL) : cfg.startdate;
-    struct tm arch_tm;
-    memcpy(&arch_tm, gmtime(&arch_time), sizeof(arch_tm));
+		for (int count=0; count<cfg.archMonths; count++)
+		{
+			ArchiveMonthData(Inverters, &arch_tm);
 
-    for (int count=0; count<cfg.archMonths; count++)
-    {
-        ArchiveMonthData(Inverters, &arch_tm);
+			if (VERBOSE_HIGH)
+			{
+				for (int inv=0; Inverters[inv]!=NULL && inv<MAX_INVERTERS; inv++)
+				{
+					printf("SUSyID: %d - SN: %lu\n", Inverters[inv]->SUSyID, Inverters[inv]->Serial);
+					for (unsigned int idx = 0; idx < sizeof(Inverters[inv]->monthData)/sizeof(MonthData); idx++)
+						if (Inverters[inv]->monthData[idx].datetime > 0)
+							printf("%s : %.3fkWh - %3.3fkWh\n", strfgmtime_t(cfg.DateFormat, Inverters[inv]->monthData[idx].datetime), (double)Inverters[inv]->monthData[idx].totalWh/1000, (double)Inverters[inv]->monthData[idx].dayWh/1000);
+					puts("======");
+				}
+			}
 
-        if (VERBOSE_HIGH)
-        {
-            for (int inv=0; Inverters[inv]!=NULL && inv<MAX_INVERTERS; inv++)
-            {
-                printf("SUSyID: %d - SN: %lu\n", Inverters[inv]->SUSyID, Inverters[inv]->Serial);
-                for (unsigned int idx = 0; idx < sizeof(Inverters[inv]->monthData)/sizeof(MonthData); idx++)
-                    if (Inverters[inv]->monthData[idx].datetime > 0)
-                        printf("%s : %.3fkWh - %3.3fkWh\n", strfgmtime_t(cfg.DateFormat, Inverters[inv]->monthData[idx].datetime), (double)Inverters[inv]->monthData[idx].totalWh/1000, (double)Inverters[inv]->monthData[idx].dayWh/1000);
-                puts("======");
-            }
-        }
+			if (cfg.CSV_Export == 1)
+				ExportMonthDataToCSV(&cfg, Inverters);
 
-		if ((cfg.CSV_Export == 1) && (cfg.archMonths > 0))
-            ExportMonthDataToCSV(&cfg, Inverters);
+			#if defined(USE_SQLITE) || defined(USE_MYSQL)
+			if ((!cfg.nosql) && db.isopen())
+				db.month_data(Inverters);
+			#endif
 
-		#if defined(USE_SQLITE) || defined(USE_MYSQL)
-		if ((!cfg.nosql) && db.isopen())
-			db.month_data(Inverters);
-		#endif
-
-        //Go to previous month
-        if (--arch_tm.tm_mon < 0)
-        {
-            arch_tm.tm_mon = 11;
-            arch_tm.tm_year--;
-        }
-    }
+			//Go to previous month
+			if (--arch_tm.tm_mon < 0)
+			{
+				arch_tm.tm_mon = 11;
+				arch_tm.tm_year--;
+			}
+		}
+	}
 
     /*****************
     * Get Event Data *
@@ -1372,6 +1401,15 @@ E_SBFSPOT initialiseSMAConnection(InverterData *invData)
 	if (getPacket(invData->BTAddress, 5) != E_OK)
 		return E_INIT;
 
+	//Get local BT address - Added V3.1.5 (SetPlantTime)
+    for (int i=0; i<6; i++)
+        LocalBTAddress[i] = pcktBuf[26+i];
+
+    if (DEBUG_NORMAL)
+        printf("Local BT address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+               LocalBTAddress[5], LocalBTAddress[4], LocalBTAddress[3],
+               LocalBTAddress[2], LocalBTAddress[1], LocalBTAddress[0]);
+
 	do
     {
 	    pcktID++;
@@ -1544,92 +1582,28 @@ E_SBFSPOT logoffSMAInverter(InverterData *inverter)
     return E_OK;
 }
 
-/*
-//Added V1.4.3 -> fixed V1.4.4
-//Issue 12 - http://code.google.com/p/sma-spot/issues/detail?id=12
-void SynchInverterTime()
+E_SBFSPOT SetPlantTime(time_t ndays, time_t lowerlimit, time_t upperlimit)
 {
-	if (DEBUG_NORMAL) puts("SynchInverterTime()");
+	// If not a Bluetooth connection, just quit
+	if (ConnType != CT_BLUETOOTH)
+		return E_OK;
 
-	//Local InverterData struct only to get current inverter time
-	InverterData invData; memset(&invData, 0, sizeof(InverterData));
-
-	//Energyproduction will give us the current invertertime
-	int rc = getInverterData(&invData, EnergyProduction);
-
-	if ((rc == 0) && (invData.InverterDatetime != 0))
-	{
-		time_t localtime;
-		time(&localtime);
-		long tzOffset = get_tzOffset();
-		time_t timediff = localtime - invData.InverterDatetime;
-
-		if (VERBOSE_NORMAL)
-		{
-			printf("Local PC Time: %s\n", strftime_t(DateTimeFormat, localtime));
-			printf("Inverter Time: %s\n", strftime_t(DateTimeFormat, invData.InverterDatetime));
-			printf("Time diff (s): %ld\n", timediff);
-			printf("TZ offset (s): %ld\n", tzOffset);
-		}
-
-		//Set inverter time only if more than 60 sec difference
-		//Each time change is logged as event
-		if (abs(timediff) > 60)
-		{
-			if (VERBOSE_NORMAL) printf("Setting inverter time to %s\n", strftime_t(DateTimeFormat, localtime));
-		    do
-			{
-				pcktID++;
-				writePacketHeader(pcktBuf, 0x01, RootDeviceAddress);
-				writePacket(pcktBuf, 0x10, 0xA0, pcktID, 0, 0, 0);
-				writeByte(pcktBuf, 0x80);
-				writeLong(pcktBuf, 0xF000020A);
-				writeLong(pcktBuf, 0x00236D00);
-				writeLong(pcktBuf, 0x00236D00);
-				writeLong(pcktBuf, 0x00236D00);
-				writeLong(pcktBuf, localtime);
-				writeLong(pcktBuf, localtime);
-				writeLong(pcktBuf, localtime);
-				writeLong(pcktBuf, tzOffset);
-				writeLong(pcktBuf, localtime);
-				writeLong(pcktBuf, 1);
-				writePacketTrailer(pcktBuf);
-				writePacketLength(pcktBuf);
-			} while (!isCrcValid(pcktBuf[packetposition-3], pcktBuf[packetposition-2]));
-
-			bthSend(pcktBuf);
-		}
-	}
-}
-*/
-
-void SetInverterTime(void)
-{
-    if (DEBUG_NORMAL) puts("SetInverterTime()");
-
-    time_t localtime = time(NULL);
-	int isDST = 0;
-	long tzOffset = get_tzOffset(&isDST);
-
-    if (VERBOSE_NORMAL)
-    {
-        printf("Local Time: %s\n", strftime_t(DateTimeFormat, localtime));
-		printf("TZ offset (s): %ld - DST: %s\n", tzOffset, isDST == 1? "On":"Off");
-    }
+    if (DEBUG_NORMAL)
+		std::cout <<"SetPlantTime()" << std::endl;
 
     do
     {
         pcktID++;
-        writePacketHeader(pcktBuf, 0x01, RootDeviceAddress);
+        writePacketHeader(pcktBuf, 0x01, addr_unknown);
         writePacket(pcktBuf, 0x10, 0xA0, 0, anySUSyID, anySerial);
         writeLong(pcktBuf, 0xF000020A);
         writeLong(pcktBuf, 0x00236D00);
         writeLong(pcktBuf, 0x00236D00);
         writeLong(pcktBuf, 0x00236D00);
-        writeLong(pcktBuf, localtime);
-        writeLong(pcktBuf, localtime);
-        writeLong(pcktBuf, localtime);
-        writeLong(pcktBuf, tzOffset);
+        writeLong(pcktBuf, 0);
+        writeLong(pcktBuf, 0);
+        writeLong(pcktBuf, 0);
+        writeLong(pcktBuf, 0);
         writeLong(pcktBuf, 1);
         writeLong(pcktBuf, 1);
         writePacketTrailer(pcktBuf);
@@ -1638,6 +1612,123 @@ void SetInverterTime(void)
     while (!isCrcValid(pcktBuf[packetposition-3], pcktBuf[packetposition-2]));
 
     bthSend(pcktBuf);
+
+	time_t hosttime = time(NULL);
+
+	// Inverter returns UTC time, TZ offset and DST
+	// Packet ID is mismatched
+	E_SBFSPOT rc = getPacket(addr_unknown, 1);
+
+	if ((rc == E_OK) && (packetposition == 72))
+	{
+		if (get_long(pcktBuf + 41) != 0x00236D00)
+		{
+		    if (DEBUG_NORMAL) std::cout << "Unexpected packet received!" << std::endl;
+			return E_COMM;
+		}
+		time_t invCurrTime = get_long(pcktBuf + 45);
+		time_t invLastTimeSet = get_long(pcktBuf + 49);
+		int tz = get_long(pcktBuf + 57) & 0xFFFFFFFE;
+		int dst = get_long(pcktBuf + 57) & 0x00000001;
+		int magic = get_long(pcktBuf + 61); // What's this?
+		
+		time_t timediff = invCurrTime - hosttime;
+
+		if (VERBOSE_NORMAL)
+		{
+			std::cout << "Local Host Time: " << strftime_t(DateTimeFormat, hosttime) << std::endl;
+			std::cout << "Plant Time     : " << strftime_t(DateTimeFormat, invCurrTime) << " (" << (timediff>0 ? "+":"") << timediff << " sec)" << std::endl;
+			std::cout << "TZ offset      : " << tz << " sec - DST: " << (dst == 1? "On":"Off") << std::endl;
+			std::cout << "Last Time Set  : " << strftime_t(DateTimeFormat, invLastTimeSet) << std::endl;
+		}
+
+		// Time difference between plant and host should be in the range of 1-3600 seconds
+		// This is to avoid the plant time is wrongly set when host time is not OK
+		// This check can be overruled by setting lower and upper limits = 0 (SBFspot -settime)
+		timediff = abs(timediff);
+
+		if ((lowerlimit == 0) && (upperlimit == 0)) // Ignore limits? (-settime command line argument)
+		{
+			// Plant time is OK - nothing to do
+			if (timediff == 0) return E_OK;
+		}
+		else
+		{
+			// Time difference is too big - nothing to do
+			if (timediff > upperlimit)
+			{
+				if (VERBOSE_NORMAL)
+				{
+					std::cout << "The time difference between inverter/host is more than " << upperlimit << " seconds.\n";
+					std::cout << "As a precaution the plant time won't be adjusted.\n";
+					std::cout << "To overrule this behaviour, execute SBFspot -settime" << std::endl;
+				}
+
+				return E_OK;
+			}
+
+			// Time difference is too small - nothing to do
+			if (timediff < lowerlimit) return E_OK;
+
+			// Calculate #days of last time set
+			time_t daysago = ((hosttime - hosttime % 86400) - (invLastTimeSet - invLastTimeSet % 86400)) / 86400;
+
+			if (daysago < ndays)
+			{
+				if (VERBOSE_NORMAL)
+				{
+					std::cout << "Time was already adjusted ";
+					if (ndays == 1)
+						std::cout << "today" << std::endl;
+					else
+						std::cout << "in last " << ndays << " days" << std::endl;
+				}
+
+				return E_OK;
+			}
+		}
+
+		// All checks passed - OK to set the time
+		
+		if (VERBOSE_NORMAL)
+		{
+			std::cout << "Adjusting plant time..." << std:: endl;
+		}
+
+		do
+		{
+			pcktID++;
+			writePacketHeader(pcktBuf, 0x01, addr_unknown);
+			writePacket(pcktBuf, 0x10, 0xA0, 0, anySUSyID, anySerial);
+			writeLong(pcktBuf, 0xF000020A);
+			writeLong(pcktBuf, 0x00236D00);
+			writeLong(pcktBuf, 0x00236D00);
+			writeLong(pcktBuf, 0x00236D00);
+			// Get new host time
+			hosttime = time(NULL);
+			writeLong(pcktBuf, hosttime);
+			writeLong(pcktBuf, hosttime);
+			writeLong(pcktBuf, hosttime);
+			writeLong(pcktBuf, tz | dst);
+			writeLong(pcktBuf, ++magic);
+			writeLong(pcktBuf, 1);
+			writePacketTrailer(pcktBuf);
+			writePacketLength(pcktBuf);
+		}
+		while (!isCrcValid(pcktBuf[packetposition-3], pcktBuf[packetposition-2]));
+
+		bthSend(pcktBuf);
+		// No response expected
+
+		std::cout << "New plant time is now " << strftime_t(DateTimeFormat, hosttime) << std::endl;
+	}
+	else
+		if (VERBOSE_NORMAL)
+		{
+			std::cout << "Failed to get current plant time (" << rc << ")" << std::endl;
+		}
+
+	return rc;
 }
 
 
@@ -1665,6 +1756,7 @@ int parseCmdline(int argc, char **argv, Config *cfg)
     cfg->s123 = S123_NOP;
 	cfg->loadlive = 0;	//force settings to prepare for live loading to http://pvoutput.org/loadlive.jsp
 	cfg->startdate = 0;
+	cfg->settime = 0;
 
     //Set quiet mode
     for (int i = 1; i < argc; i++)
@@ -1896,6 +1988,9 @@ int parseCmdline(int argc, char **argv, Config *cfg)
 			}
         }
 
+        else if (stricmp(argv[i], "-settime") == 0)
+			cfg->settime = 1;
+
         //Scan for bluetooth devices
         else if (stricmp(argv[i], "-scan") == 0)
         {
@@ -1922,6 +2017,15 @@ int parseCmdline(int argc, char **argv, Config *cfg)
 
     }
 
+	if (cfg->settime == 1)
+	{
+		// Verbose output level should be at least = 2 (normal)
+		if (cfg->verbose < 2)
+			cfg->verbose = 2;
+
+		cfg->forceInq = 1;
+	}
+
     //Disable verbose/debug modes when silent
     if (cfg->quiet == 1)
     {
@@ -1946,7 +2050,7 @@ void SayHello(int ShowHelp)
 #endif
     std::cout << "SBFspot V" << VERSION << "\n";
     std::cout << "Yet another tool to read power production of SMA solar inverters\n";
-    std::cout << "(c) 2012-2015, SBF (https://sbfspot.codeplex.com)\n";
+    std::cout << "(c) 2012-2016, SBF (https://sbfspot.codeplex.com)\n";
     std::cout << "Compiled for " << OS << " (" << BYTEORDER << ") " << sizeof(long) * 8 << " bit\n" << std::endl;
     if (ShowHelp != 0)
     {
@@ -1970,7 +2074,8 @@ void SayHello(int ShowHelp)
 		std::cout << " -installer          Login as installer\n";
 		std::cout << " -password:xxxx      Installer password\n";
 		std::cout << " -loadlive           Use predefined settings for manual upload to pvoutput.org\n";
-		std::cout << " -startdate:YYYYMMDD Set start date for historic data retrieval\n" << std::endl;
+		std::cout << " -startdate:YYYYMMDD Set start date for historic data retrieval\n";
+		std::cout << " -settime            Sync inverter time with host time\n" << std::endl;
     }
 }
 
@@ -2022,6 +2127,8 @@ int GetConfig(Config *cfg)
     cfg->SpotWebboxHeader = 0;
     cfg->MIS_Enabled = 0;
 	strcpy(cfg->locale, "en-US");
+	cfg->synchTimeLow = 1;
+	cfg->synchTimeHigh = 3600;
 
     const char *CFG_Boolean = "(0-1)";
     const char *CFG_InvalidValue = "Invalid value for '%s' %s\n";
@@ -2120,11 +2227,33 @@ int GetConfig(Config *cfg)
 				else if(stricmp(variable, "SynchTime") == 0)
                 {
                     lValue = strtol(value, &pEnd, 10);
-                    if (((lValue == 0) || (lValue == 1)) && (*pEnd == 0))
+                    if (((lValue >= 0) && (lValue <= 30)) && (*pEnd == 0))
                         cfg->synchTime = (int)lValue;
                     else
                     {
-                        fprintf(stderr, CFG_InvalidValue, variable, CFG_Boolean);
+                        fprintf(stderr, CFG_InvalidValue, variable, "(0-30)");
+                        rc = -2;
+                    }
+                }
+				else if(stricmp(variable, "SynchTimeLow") == 0)
+                {
+                    lValue = strtol(value, &pEnd, 10);
+                    if ((lValue >= 1) && (lValue <= 120) && (*pEnd == 0))
+						cfg->synchTimeLow = (int)lValue;
+                    else
+                    {
+                        fprintf(stderr, CFG_InvalidValue, variable, "(1-120)");
+                        rc = -2;
+                    }
+                }
+				else if(stricmp(variable, "SynchTimeHigh") == 0)
+                {
+                    lValue = strtol(value, &pEnd, 10);
+                    if ((lValue >= 1200) && (lValue <= 3600) && (*pEnd == 0))
+						cfg->synchTimeHigh = (int)lValue;
+                    else
+                    {
+                        fprintf(stderr, CFG_InvalidValue, variable, "(1200-3600)");
                         rc = -2;
                     }
                 }
@@ -2285,6 +2414,8 @@ int GetConfig(Config *cfg)
     }
     fclose(fp);
 
+	if (rc != 0) return rc;
+
     if (strlen(cfg->BT_Address) > 0)
         cfg->ConnectionType = CT_BLUETOOTH;
     else
@@ -2383,6 +2514,8 @@ void ShowConfig(Config *cfg)
 		"\nDateFormat=" << cfg->DateFormat << \
 		"\nTimeFormat=" << cfg->TimeFormat << \
 		"\nSynchTime=" << cfg->synchTime << \
+		"\nSynchTimeLow=" << cfg->synchTimeLow << \
+		"\nSynchTimeHigh=" << cfg->synchTimeHigh << \
 		"\nSunRSOffset=" << cfg->SunRSOffset << \
 		"\nDecimalPoint=" << dp2txt(cfg->decimalpoint) << \
 		"\nCSV_Delimiter=" << delim2txt(cfg->delimiter) << \
@@ -3032,8 +3165,59 @@ int getInverterData(InverterData *devList[], enum getInverterDataType type)
 
 void resetInverterData(InverterData *inv)
 {
-	memset(inv, 0, sizeof(InverterData));
+	inv->BatAmp = 0;
+	inv->BatChaStt = 0;
+	inv->BatDiagCapacThrpCnt = 0;
+	inv->BatDiagTotAhIn = 0;
+	inv->BatDiagTotAhOut = 0;
+	inv->BatTmpVal = 0;
+	inv->BatVol = 0;
+	inv->BT_Signal = 0;
+	inv->calEfficiency = 0;
+	inv->calPacTot = 0;
+	inv->calPdcTot = 0;
 	inv->DevClass = AllDevices;
+	inv->DeviceClass[0] = 0;
+	inv->DeviceName[0] = 0;
+	inv->DeviceStatus = 0;
+	inv->DeviceType[0] = 0;
+	inv->EToday = 0;
+	inv->ETotal = 0;
+	inv->FeedInTime = 0;
+	inv->flags = 0;
+	inv->GridFreq = 0;
+	inv->GridRelayStatus = 0;
+	inv->Iac1 = 0;
+	inv->Iac2 = 0;
+	inv->Iac3 = 0;
+	inv->Idc1 = 0;
+	inv->Idc2 = 0;
+	inv->InverterDatetime = 0;
+	inv->IPAddress[0] = 0;
+	inv->modelID = 0;
+	inv->NetID = 0;
+	inv->OperationTime = 0;
+	inv->Pac1 = 0;
+	inv->Pac2 = 0;
+	inv->Pac3 = 0;
+	inv->Pdc1 = 0;
+	inv->Pdc2 = 0;
+	inv->Pmax1 = 0;
+	inv->Pmax2 = 0;
+	inv->Pmax3 = 0;
+	inv->Serial = 0;
+	inv->SleepTime = 0;
+	inv->SUSyID = 0;
+	inv->SWVersion[0] = 0;
+	inv->Temperature = 0;
+	inv->TotalPac = 0;
+	inv->Uac1 = 0;
+	inv->Uac2 = 0;
+	inv->Uac3 = 0;
+	inv->Udc1 = 0;
+	inv->Udc2 = 0;
+	inv->WakeupTime = 0;
+	inv->monthDataOffset = 0;
 }
 
 E_SBFSPOT setDeviceData(InverterData *inv, LriDef lri, uint16_t cmd, Rec40S32 &data)

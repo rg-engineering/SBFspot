@@ -1,6 +1,6 @@
 /************************************************************************************************
 	SBFspot - Yet another tool to read power production of SMA® solar inverters
-	(c)2012-2014, SBF
+	(c)2012-2016, SBF
 
 	Latest version found at https://sbfspot.codeplex.com
 
@@ -61,15 +61,25 @@ int db_SQL_Export::day_data(InverterData *inverters[])
 			const unsigned int numelements = sizeof(inverters[inv]->dayData)/sizeof(DayData);
 			unsigned int first_rec, last_rec;
 			// Find first record with production data
-			for (first_rec = 0; (inverters[inv]->dayData[first_rec].watt <= 0) && (first_rec < numelements); first_rec++);
-			if (first_rec < numelements) // Production data found or all zero?
+			for (first_rec = 0; first_rec < numelements; first_rec++)
+			{
+				if ((inverters[inv]->dayData[first_rec].datetime == 0) || (inverters[inv]->dayData[first_rec].watt != 0))
 			{
 				// Include last zero record, just before production starts
 				if (first_rec > 0) first_rec--;
+					break;
+				}
+			}
 
 				// Find last record with production data
-		        for (last_rec = numelements-1; (inverters[inv]->dayData[last_rec].watt <= 0) && (last_rec >= 0); last_rec--);
+			for (last_rec = numelements-1; last_rec > first_rec; last_rec--)
+			{
+				if ((inverters[inv]->dayData[last_rec].datetime != 0) && (inverters[inv]->dayData[last_rec].watt != 0))
+					break;
+			}
 
+			if (first_rec < last_rec) // Production data found or all zero?
+			{
 				// Store data from first to last record
 		        for (unsigned int idx = first_rec; idx <= last_rec; idx++)
 				{

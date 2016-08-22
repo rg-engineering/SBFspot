@@ -1,6 +1,6 @@
 /************************************************************************************************
 	SBFspot - Yet another tool to read power production of SMA® solar inverters
-	(c)2012-2015, SBF
+	(c)2012-2016, SBF
 
 	Latest version found at https://sbfspot.codeplex.com
 
@@ -217,12 +217,15 @@ E_SBFSPOT ArchiveMonthData(InverterData *inverters[], tm *start_tm)
         printf("startTime = %08lX -> %s\n", startTime, strftime_t("%d/%m/%Y %H:%M:%S", startTime));
 
     for (int inv=0; inverters[inv]!=NULL && inv<MAX_INVERTERS; inv++)
+	{
+		inverters[inv]->hasMonthData = false;
         for(unsigned int i=0; i<sizeof(inverters[inv]->monthData)/sizeof(MonthData); i++)
 		{
             inverters[inv]->monthData[i].datetime = 0;
 			inverters[inv]->monthData[i].dayWh = 0;
 			inverters[inv]->monthData[i].totalWh = 0;
 		}
+	}
 
     int packetcount = 0;
     int validPcktID = 0;
@@ -279,7 +282,7 @@ E_SBFSPOT ArchiveMonthData(InverterData *inverters[], tm *start_tm)
                         {
                             datetime = (time_t)get_long(pcktBuf + x);
 							//datetime -= (datetime % 86400) + 43200; // 3.0 - Round to UTC 12:00 - Removed 3.0.1 see issue C54
-							datetime += inverters[inv]->monthDataOffset; // Issue 115
+							datetime += inverters[inv]->monthDataOffset; // Issues 115/130
                             totalWh = get_longlong(pcktBuf + x + 4);
                             if (totalWh != MAXULONGLONG)
                             {
@@ -291,6 +294,7 @@ E_SBFSPOT ArchiveMonthData(InverterData *inverters[], tm *start_tm)
                                     {
                                         if (idx < sizeof(inverters[inv]->monthData)/sizeof(MonthData))
                                         {
+											inverters[inv]->hasMonthData = true;
 											inverters[inv]->monthData[idx].datetime = datetime;
                                             inverters[inv]->monthData[idx].totalWh = totalWh;
                                             inverters[inv]->monthData[idx].dayWh = totalWh - totalWh_prev;
@@ -400,36 +404,47 @@ E_SBFSPOT ArchiveEventData(InverterData *inverters[], boost::gregorian::date sta
     return rc;
 }
 
-//Issue 115
+//Issues 115/130
 E_SBFSPOT getMonthDataOffset(InverterData *inverters[])
 {
-    time_t now = time(NULL);
-    struct tm now_tm;
-    memcpy(&now_tm, gmtime(&now), sizeof(now_tm));
-
 	E_SBFSPOT rc = E_OK;
 
+	time_t now = time(NULL);
+	struct tm now_tm;
+	memcpy(&now_tm, gmtime(&now), sizeof(now_tm));
+
+	// Temporarily disable verbose logging
+	int currentVerboseLevel = verbose;
+	verbose = 0;
 	rc = ArchiveMonthData(inverters, &now_tm);
+	verbose = currentVerboseLevel;
 
 	if (rc == E_OK)
 	{
 	    for (int inv=0; inverters[inv]!=NULL && inv<MAX_INVERTERS; inv++)
 		{
-			inverters[inv]->monthDataOffset = 0;
-			// Get last record of monthdata
-		    for(unsigned int i = sizeof(inverters[inv]->monthData)/sizeof(MonthData); i > 0; i--)
+			if (inverters[inv]->hasMonthData)
 			{
-				if (inverters[inv]->monthData[i].datetime != 0)
+				// Get last record of monthdata
+				for(int i = 30; i > 0; i--)
 				{
-					if ((inverters[inv]->monthData[i].datetime - now) < 86400)
-						inverters[inv]->monthDataOffset = -86400;
+					if (inverters[inv]->monthData[i].datetime != 0)
+					{
+						now = time(NULL);
+						memcpy(&now_tm, gmtime(&now), sizeof(now_tm));
 
-					break;
+						struct tm inv_tm;
+						memcpy(&inv_tm, gmtime(&inverters[inv]->monthData[i].datetime), sizeof(inv_tm));
+
+						if (now_tm.tm_yday == inv_tm.tm_yday)
+							inverters[inv]->monthDataOffset = -86400;
+
+						break;
+					}
 				}
 			}
-
 			if ((DEBUG_HIGHEST) && (!quiet))
-				std::cout << "monthDataOffset=" << inverters[inv]->monthDataOffset << std::endl;
+				std::cout << inverters[inv]->SUSyID << ":" << inverters[inv]->Serial << " monthDataOffset=" << inverters[inv]->monthDataOffset << std::endl;
 		}
 	}
 

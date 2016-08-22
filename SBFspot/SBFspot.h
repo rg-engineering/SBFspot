@@ -1,6 +1,6 @@
 /************************************************************************************************
 	SBFspot - Yet another tool to read power production of SMA® solar inverters
-	(c)2012-2015, SBF
+	(c)2012-2016, SBF
 
 	Latest version found at https://sbfspot.codeplex.com
 
@@ -172,6 +172,7 @@ typedef struct
 	int flags;
 	DayData dayData[288];
 	MonthData monthData[31];
+	bool hasMonthData;
 	time_t monthDataOffset;	// Issue 115
 	std::vector<EventData> eventData;
 	long calPdcTot;
@@ -241,6 +242,8 @@ typedef struct
 	int		MIS_Enabled;			// Multi Inverter Support
 	std::string	timezone;
 	boost::local_time::time_zone_ptr tz;
+	int		synchTimeLow;			// settime low limit
+	int		synchTimeHigh;			// settime high limit
 
 	//Commandline settings
 	int		debug;				// -d			Debug level (0-5)
@@ -257,6 +260,7 @@ typedef struct
 	int		loadlive;			// -loadlive	Force settings to prepare for live loading to http://pvoutput.org/loadlive.jsp
 	time_t	startdate;			// -startdate	Start reading of historic data at the given date (YYYYMMDD)
     S123_COMMAND	s123;		// -123s		123Solar Web Solar logger support(http://www.123solar.org/)
+	int		settime;			// -settime		Set plant time
 } Config;
 
 
@@ -409,7 +413,8 @@ typedef enum
 	E_INVPASSW		= -7,	// Invalid password
 	E_RETRY			= -8,	// Retry the last action
 	E_EOF			= -9,	// End of data
-	E_PRIVILEGE		= -10	// Privilege not held (need installer login)
+	E_PRIVILEGE		= -10,	// Privilege not held (need installer login)
+	E_COMM			= -11	// General communication error
 } E_SBFSPOT;
 
 //User Group
@@ -452,8 +457,7 @@ E_SBFSPOT logoffSMAInverter(InverterData *inverter);
 int parseCmdline(int argc, char **argv, Config *cfg);
 void printHexBytes(BYTE *buf, int num);
 void SayHello(int ShowHelp);
-void SetInverterTime(void);
-void SynchInverterTime(void);
+E_SBFSPOT SetPlantTime(time_t ndays, time_t lowerlimit = 0, time_t upperlimit = 0);
 E_SBFSPOT ethGetPacket(void);
 void resetInverterData(InverterData *inv);
 void ShowConfig(Config *cfg);
@@ -461,7 +465,6 @@ E_SBFSPOT getInverterWMax(InverterData *inv, Rec40S32 &data);
 E_SBFSPOT setInverterWMax(InverterData *inv, Rec40S32 &data);
 E_SBFSPOT getDeviceData(InverterData *inv, LriDef lri, uint16_t cmd, Rec40S32 &data);
 E_SBFSPOT setDeviceData(InverterData *inv, LriDef lri, uint16_t cmd, Rec40S32 &data);
-E_SBFSPOT setPowerLimit(InverterData *devList[], unsigned long serial, int powerlimit, bool isPct);
 
 extern unsigned char CommBuf[COMMBUFSIZE];
 

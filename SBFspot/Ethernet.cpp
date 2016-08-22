@@ -132,7 +132,7 @@ int ethRead(unsigned char *buf, unsigned int bufsize)
 		else
 			printf("recvfrom() returned an error: %d\n", bytes_read);
 
-		if (bytes_read == 600) timeout--;	// decrease timeout if the packet received within the timeout is an energymeter packet
+		//if (bytes_read == 600) timeout--;	// decrease timeout if the packet received within the timeout is an energymeter packet
 	} while (bytes_read == 600);			// keep on reading if only energymeter-data was received
 
     return bytes_read;

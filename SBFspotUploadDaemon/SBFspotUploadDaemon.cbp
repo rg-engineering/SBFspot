@@ -88,6 +88,7 @@
 		<Unit filename="../SBFspotUploadCommon/Configuration.h" />
 		<Unit filename="../SBFspotUploadCommon/PVOutput.cpp" />
 		<Unit filename="../SBFspotUploadCommon/PVOutput.h" />
+		<Unit filename="../SBFspotUploadCommon/PVOutput_x.cpp" />
 		<Unit filename="main.cpp" />
 		<Extensions>
 			<code_completion />
