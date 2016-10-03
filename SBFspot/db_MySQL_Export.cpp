@@ -92,28 +92,28 @@ int db_SQL_Export::day_data(InverterData *inverters[])
 						values[0].buffer_type	= MYSQL_TYPE_LONG;
 						values[0].buffer		= (void *) &inverters[inv]->dayData[idx].datetime;
 						values[0].is_unsigned	= false;
-						values[0].is_null		= false;
+						values[0].is_null		= 0; //false;
 						values[0].length		= 0;
 
 						// Serial
 						values[1].buffer_type	= MYSQL_TYPE_LONG;
 						values[1].buffer		= (void *) &inverters[inv]->Serial;
 						values[1].is_unsigned	= true;
-						values[1].is_null		= false;
+						values[1].is_null		= 0; //false;
 						values[1].length		= 0;
 
 						// Total Yield
 						values[2].buffer_type	= MYSQL_TYPE_LONGLONG;
 						values[2].buffer		= (void *) &inverters[inv]->dayData[idx].totalWh;
 						values[2].is_unsigned	= true;
-						values[2].is_null		= false;
+						values[2].is_null		= 0; //false;
 						values[2].length		= 0;
 
 						// Power
 						values[3].buffer_type	= MYSQL_TYPE_LONGLONG;
 						values[3].buffer		= (void *) &inverters[inv]->dayData[idx].watt;
 						values[3].is_unsigned	= true;
-						values[3].is_null		= false;
+						values[3].is_null		= 0; //false;
 						values[3].length		= 0;
 
 						// PVOutput
@@ -178,28 +178,28 @@ int db_SQL_Export::month_data(InverterData *inverters[])
 					values[0].buffer_type	= MYSQL_TYPE_LONG;
 					values[0].buffer		= (void *) &inverters[inv]->monthData[idx].datetime;
 					values[0].is_unsigned	= false;
-					values[0].is_null		= false;
+					values[0].is_null		= 0; //false;
 					values[0].length		= 0;
 
 					// Serial
 					values[1].buffer_type	= MYSQL_TYPE_LONG;
 					values[1].buffer		= (void *) &inverters[inv]->Serial;
 					values[1].is_unsigned	= true;
-					values[1].is_null		= false;
+					values[1].is_null		= 0; //false;
 					values[1].length		= 0;
 
 					// Total Yield
 					values[2].buffer_type	= MYSQL_TYPE_LONGLONG;
 					values[2].buffer		= (void *) &inverters[inv]->monthData[idx].totalWh;
 					values[2].is_unsigned	= true;
-					values[2].is_null		= false;
+					values[2].is_null		= 0; //false;
 					values[2].length		= 0;
 
 					// Day Yield
 					values[3].buffer_type	= MYSQL_TYPE_LONGLONG;
 					values[3].buffer		= (void *) &inverters[inv]->monthData[idx].dayWh;
 					values[3].is_unsigned	= true;
-					values[3].is_null		= false;
+					values[3].is_null		= 0; //false;
 					values[3].length		= 0;
 
 					mysql_stmt_bind_param(pStmt, values);
@@ -336,81 +336,81 @@ int db_SQL_Export::event_data(InverterData *inv[], TagDefs& tags)
 				values[0].buffer_type	= MYSQL_TYPE_SHORT;
 				values[0].buffer		= &EntryID;
 				values[0].is_unsigned	= true;
-				values[0].is_null		= false;
+				values[0].is_null		= 0; //false;
 
 				// Timestamp
 				int32_t DateTime = it->DateTime();
 				values[1].buffer_type	= MYSQL_TYPE_LONG;
 				values[1].buffer		= &DateTime;
 				values[1].is_unsigned	= false;
-				values[1].is_null		= false;
+				values[1].is_null		= 0; //false;
 
 				// Serial
 				uint32_t SerNo = it->SerNo();
 				values[2].buffer_type	= MYSQL_TYPE_LONG;
 				values[2].buffer		= &SerNo;
 				values[2].is_unsigned	= true;
-				values[2].is_null		= false;
+				values[2].is_null		= 0; //false;
 
 				// SUSy ID
 				uint16_t SUSyID = it->SUSyID();
 				values[3].buffer_type	= MYSQL_TYPE_SHORT;
 				values[3].buffer		= &SUSyID;
 				values[3].is_unsigned	= true;
-				values[3].is_null		= false;
+				values[3].is_null		= 0; //false;
 
 				// Event Code
 				uint16_t EventCode = it->EventCode();
 				values[4].buffer_type	= MYSQL_TYPE_SHORT;
 				values[4].buffer		= &EventCode;
 				values[4].is_unsigned	= true;
-				values[4].is_null		= false;
+				values[4].is_null		= 0; //false;
 
 				// Event Type
 				string EventType = it->EventType();
 				values[5].buffer_type	= MYSQL_TYPE_STRING;
 				values[5].buffer		= (char *)EventType.c_str();
 				values[5].buffer_length = EventType.size();
-				values[5].is_null		= false;
+				values[5].is_null		= 0; //false;
 
 				// Event Category
 				string EventCategory = it->EventCategory();
 				values[6].buffer_type	= MYSQL_TYPE_STRING;
 				values[6].buffer		= (char *)EventCategory.c_str();
 				values[6].buffer_length = EventCategory.size();
-				values[6].is_null		= false;
+				values[6].is_null		= 0; //false;
 
 				// Event Group
 				values[7].buffer_type	= MYSQL_TYPE_STRING;
 				values[7].buffer		= (char *)grp.c_str();
 				values[7].buffer_length = grp.size();
-				values[7].is_null		= false;
+				values[7].is_null		= 0; //false;
 
 				// Event Tag
 				values[8].buffer_type	= MYSQL_TYPE_STRING;
 				values[8].buffer		= (char *)tag.c_str();
 				values[8].buffer_length = tag.size();
-				values[8].is_null		= false;
+				values[8].is_null		= 0; //false;
 
 				// Old Value
 				string OldValue = oldval.str();
 				values[9].buffer_type	= MYSQL_TYPE_STRING;
 				values[9].buffer		= (char *)OldValue.c_str();
 				values[9].buffer_length = OldValue.size();
-				values[9].is_null		= false;
+				values[9].is_null		= 0; //false;
 
 				// New Value
 				string NewValue = newval.str();
 				values[10].buffer_type	= MYSQL_TYPE_STRING;
 				values[10].buffer		= (char *)NewValue.c_str();
 				values[10].buffer_length = NewValue.size();
-				values[10].is_null		= false;
+				values[10].is_null		= 0; //false;
 
 				// User Group
 				values[11].buffer_type	= MYSQL_TYPE_STRING;
 				values[11].buffer		= (char *)usrgrp.c_str();
 				values[11].buffer_length = usrgrp.size();
-				values[11].is_null		= false;
+				values[11].is_null		= 0; //false;
 
 				mysql_stmt_bind_param(pStmt, values);
 
